@@ -75,10 +75,10 @@ namespace MajDHTProber.Tests
             Assert.Equal(0, directory.Count);
         }
 
-        /// <summary>Injected contacts become table entries and every change is reported.</summary>
+        /// <summary>Observed contacts become table entries and every observation and removal is reported.</summary>
         /// <returns>Completion after the checks.</returns>
         [Fact]
-        public async Task InjectsAndTracksContacts()
+        public async Task TracksObservedContacts()
         {
             await using var remote = await TestNodes.StartAsync();
             var table = new TrackingRoutingTable();
@@ -87,23 +87,29 @@ namespace MajDHTProber.Tests
             table.Observed += (_, observation) => observed.Add(observation);
             table.Removed += (_, id) => removed.Add(id);
 
-            Assert.Throws<InvalidOperationException>(() => table.Inject(remote.LocalPeer, IPAddress.Loopback));
+            Assert.Null(table.LocalNodeId);
+            Assert.Empty(table.Snapshot());
+            Assert.False(table.Contains(remote.NodeId));
             table.Initialize(new DHTIdentity().NodeId, 8);
 
-            Assert.True(table.Inject(remote.LocalPeer, IPAddress.Loopback));
+            table.Observe(remote.LocalPeer, IPAddress.Loopback);
             Assert.True(table.Contains(remote.NodeId));
             Assert.Single(table.Snapshot());
-            Assert.True(Assert.Single(observed).Injected);
+            var admission = Assert.Single(observed);
+            Assert.True(admission.InTable);
+            Assert.Equal(IPAddress.Loopback, admission.VerifiedAddress);
+            Assert.Same(remote.LocalPeer, admission.Peer);
 
             table.Observe(remote.LocalPeer, null);
-            Assert.False(observed[1].Injected);
+            Assert.Equal(2, observed.Count);
             Assert.True(observed[1].InTable);
+            Assert.Null(observed[1].VerifiedAddress);
 
             table.Remove(remote.NodeId);
             Assert.False(table.Contains(remote.NodeId));
             Assert.Equal(new[] { remote.NodeId }, removed);
 
-            table.Inject(remote.LocalPeer, IPAddress.Loopback);
+            table.Observe(remote.LocalPeer, IPAddress.Loopback);
             table.Evict(remote.NodeId);
             Assert.False(table.Contains(remote.NodeId));
             Assert.Single(removed);
@@ -117,9 +123,13 @@ namespace MajDHTProber.Tests
             await using var remote = await TestNodes.StartAsync();
             var table = new TrackingRoutingTable();
             table.Observed += (_, _) => throw new InvalidOperationException("listener");
+            table.Removed += (_, _) => throw new InvalidOperationException("listener");
             table.Initialize(new DHTIdentity().NodeId, 8);
 
-            Assert.True(table.Inject(remote.LocalPeer, IPAddress.Loopback));
+            table.Observe(remote.LocalPeer, IPAddress.Loopback);
+            Assert.True(table.Contains(remote.NodeId));
+            table.Remove(remote.NodeId);
+            Assert.False(table.Contains(remote.NodeId));
         }
     }
 }

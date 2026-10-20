@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using MajDHTNetwork;
 
 #nullable enable
@@ -8,36 +9,36 @@ namespace MajDHTProber.Models
     /// <summary>Options for adding a node by endpoint.</summary>
     public sealed record AddPeerOptions
     {
-        /// <summary>Gets the transport tried first when contacting the endpoint.</summary>
-        public DHTTransport Transport { get; init; } = DHTTransport.Tcp;
-
-        /// <summary>Gets whether a neighbor lookup through the new node follows, as when joining through it.</summary>
-        public bool Join { get; init; } = true;
-
-        /// <summary>Gets whether the hosted node registers with the new node when it offers relay assistance.</summary>
-        public bool RegisterRelay { get; init; }
+        /// <summary>
+        /// Gets the transport tried first when contacting the endpoint, or null for the hosted node's preferred transport;
+        /// the other transport is tried at the same port when the first one does not answer.
+        /// </summary>
+        public DHTTransport? Transport { get; init; }
     }
 
-    /// <summary>The outcome of adding a node by endpoint.</summary>
+    /// <summary>The outcome of adding a node by endpoint through the hosted node's own signed Hello exchange.</summary>
     public sealed record AddPeerResult
     {
-        /// <summary>Gets the probe that contacted the endpoint.</summary>
-        public required EndpointProbeResult Probe { get; init; }
+        /// <summary>Gets the contacted endpoint.</summary>
+        public required IPEndPoint Endpoint { get; init; }
 
-        /// <summary>Gets whether the node was recorded in the peer list.</summary>
-        public bool Added { get; init; }
+        /// <summary>Gets how long the Hello exchange, relay registration and neighbor discovery took.</summary>
+        public required TimeSpan Elapsed { get; init; }
+
+        /// <summary>Gets the signed contact of the node that answered, or null when nothing was added.</summary>
+        public DHTPeer? Peer { get; init; }
 
         /// <summary>Gets whether the hosted node's routing table accepted the node as a lookup hop.</summary>
         public bool AdmittedToRoutingTable { get; init; }
 
-        /// <summary>Gets the number of neighbors found by the follow-up lookup, when one ran.</summary>
-        public int? NeighborsFound { get; init; }
+        /// <summary>Gets the size of the routing table after the neighbor discovery that followed.</summary>
+        public int RoutingTableSize { get; init; }
 
-        /// <summary>Gets whether relay registration succeeded, when it was attempted.</summary>
-        public bool? RelayRegistered { get; init; }
-
-        /// <summary>Gets a user-facing explanation of anything noteworthy.</summary>
+        /// <summary>Gets a user-facing explanation of anything noteworthy, or the reason nothing was added.</summary>
         public string? Note { get; init; }
+
+        /// <summary>Gets whether a node answered and was recorded in the peer list.</summary>
+        public bool Added => Peer != null;
     }
 
     /// <summary>The outcome of checking whether a hosted node can reach a peer through its own routes.</summary>

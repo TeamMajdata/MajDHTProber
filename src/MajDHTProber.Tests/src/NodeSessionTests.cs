@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using MajDHTNetwork;
@@ -60,7 +61,7 @@ namespace MajDHTProber.Tests
             Assert.Contains("监听地址", session.LastError, StringComparison.Ordinal);
         }
 
-        /// <summary>A node added by endpoint is probed, recorded, admitted to the routing table and connected.</summary>
+        /// <summary>A node added by endpoint answers the hosted node's Hello, is recorded, admitted to the routing table and connected.</summary>
         /// <returns>Completion after the checks.</returns>
         [Fact]
         public async Task AddsPeerByEndpoint()
@@ -70,17 +71,20 @@ namespace MajDHTProber.Tests
             await using var session = TestNodes.CreateSession(new LogSink(), TestNodes.LoopbackSettings());
             await session.StartAsync(timeout.Token);
 
-            var result = await session.AddPeerAsync(TestNodes.TcpEndpoint(target), new AddPeerOptions { Join = true }, timeout.Token);
+            var result = await session.AddPeerAsync(TestNodes.TcpEndpoint(target), new AddPeerOptions { Transport = DHTTransport.Tcp }, timeout.Token);
 
             Assert.True(result.Added, result.Note);
             Assert.True(result.AdmittedToRoutingTable);
-            Assert.NotNull(result.NeighborsFound);
+            Assert.Equal(target.NodeId, result.Peer!.NodeId);
+            Assert.True(result.RoutingTableSize >= 1);
+            Assert.True(result.Elapsed > TimeSpan.Zero);
             var peer = session.Peers.Find(target.NodeId);
             Assert.NotNull(peer);
             Assert.True((peer!.Sources & PeerSource.Manual) != 0);
+            Assert.Equal(IPAddress.Loopback, peer.VerifiedAddress);
             Assert.Equal(PeerConnectionState.Connected, peer.GetState(DateTimeOffset.UtcNow));
-            Assert.True(peer.LastProbe!.Succeeded);
             Assert.True(session.RoutingTable!.Contains(target.NodeId));
+            Assert.True(target.KnownPeers.Count >= 1);
         }
 
         /// <summary>Adding the session's own endpoint is refused with an explanation.</summary>
@@ -99,6 +103,27 @@ namespace MajDHTProber.Tests
             Assert.Equal(0, session.Peers.Count);
         }
 
+        /// <summary>An endpoint that answers through neither transport is reported in the result instead of thrown.</summary>
+        /// <returns>Completion after the checks.</returns>
+        [Fact]
+        public async Task ReportsUnreachableEndpointWhenAdding()
+        {
+            using var timeout = TestNodes.Timeout();
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            await using var session = TestNodes.CreateSession(new LogSink(), TestNodes.LoopbackSettings());
+            await session.StartAsync(timeout.Token);
+
+            var result = await session.AddPeerAsync(new IPEndPoint(IPAddress.Loopback, port), new AddPeerOptions(), timeout.Token);
+
+            Assert.False(result.Added);
+            Assert.Null(result.Peer);
+            Assert.Contains("未响应", result.Note, StringComparison.Ordinal);
+            Assert.Equal(0, session.Peers.Count);
+        }
+
         /// <summary>Probing a known peer covers every advertised endpoint and transport and remembers the outcome.</summary>
         /// <returns>Completion after the checks.</returns>
         [Fact]
@@ -108,18 +133,51 @@ namespace MajDHTProber.Tests
             await using var target = await TestNodes.StartAsync();
             await using var session = TestNodes.CreateSession(new LogSink(), TestNodes.LoopbackSettings());
             await session.StartAsync(timeout.Token);
-            await session.AddPeerAsync(TestNodes.UdpEndpoint(target), new AddPeerOptions { Transport = DHTTransport.Udp, Join = false }, timeout.Token);
+            await session.AddPeerAsync(TestNodes.UdpEndpoint(target), new AddPeerOptions { Transport = DHTTransport.Udp }, timeout.Token);
 
             var results = await session.ProbePeerAsync(session.Peers.Find(target.NodeId)!, timeout.Token);
             var route = await session.CheckRouteAsync(target.LocalPeer, timeout.Token);
 
             Assert.Equal(2, results.Count);
             Assert.All(results, result => Assert.Equal(target.NodeId, result.NodeId));
-            Assert.Contains(results, result => result.RequestedTransport == DHTTransport.Tcp);
-            Assert.Contains(results, result => result.RequestedTransport == DHTTransport.Udp);
+            Assert.All(results, result => Assert.True(result.PingSucceeded, result.Error));
+            Assert.Contains(results, result => result.Transport == DHTTransport.Tcp);
+            Assert.Contains(results, result => result.Transport == DHTTransport.Udp);
             Assert.True(session.Peers.Find(target.NodeId)!.LastProbe!.Succeeded);
             Assert.True(route.Reachable);
             Assert.NotNull(route.Statistics);
+        }
+
+        /// <summary>A session saves its routing table when it stops and rejoins the saved nodes when it starts again.</summary>
+        /// <returns>Completion after the checks.</returns>
+        [Fact]
+        public async Task RestoresSavedRoutingTable()
+        {
+            using var timeout = TestNodes.Timeout();
+            using var directory = new TempDirectory();
+            var sink = new LogSink();
+            var routing = new RoutingSnapshotStore(directory.Path, sink.CreateLogger("路由表"));
+            await using var target = await TestNodes.StartAsync();
+            var settings = TestNodes.LoopbackSettings();
+            settings.PersistRoutingTable = true;
+            await using var session = TestNodes.CreateSession(sink, settings, "测试节点", routing);
+            await session.StartAsync(timeout.Token);
+            Assert.Equal(0, await session.RestoreRoutingTableAsync(timeout.Token));
+            var added = await session.AddPeerAsync(TestNodes.TcpEndpoint(target), new AddPeerOptions(), timeout.Token);
+            Assert.True(added.AdmittedToRoutingTable, added.Note);
+
+            await session.StopAsync();
+
+            Assert.True(File.Exists(Path.Combine(directory.Path, "test" + RoutingSnapshotStore.Extension)));
+            Assert.False(session.Peers.Find(target.NodeId)!.InRoutingTable);
+
+            await session.StartAsync(timeout.Token);
+            var restored = await session.RestoreRoutingTableAsync(timeout.Token);
+
+            Assert.Equal(1, restored);
+            Assert.True(session.RoutingTable!.Contains(target.NodeId));
+            Assert.True(session.Peers.Find(target.NodeId)!.InRoutingTable);
+            Assert.Contains(sink.Snapshot(), entry => entry.Message.StartsWith("路由表恢复完成", StringComparison.Ordinal));
         }
 
         /// <summary>Content published by one session is resolved, downloaded with progress and verified by another.</summary>

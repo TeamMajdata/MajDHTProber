@@ -14,7 +14,7 @@
                         <DataTemplate x:DataType="tools:PingToolViewModel">
                             <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="12">
                                 <TextBlock Classes="caption"
-                                           Text="类似 ping：每一轮都由独立的探针节点向端点发起签名 Hello，再向应答节点的通告端点发送一次加密查找请求，分别计时。探针不通告端点，不会进入对方路由表。" />
+                                           Text="类似 ping：每一轮都以独立的探针身份直接向端点发送签名 Hello，再向同一端点发送一次加密 Ping，分别计时，并显示对方观察到的本机地址。探针不通告端点，不会进入对方路由表。" />
                                 <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                                     <StackPanel>
                                         <TextBlock Classes="label" Text="端点" />
@@ -94,7 +94,7 @@
                                             <TextBlock Grid.Column="2" Classes="head" Text="端点" />
                                             <TextBlock Grid.Column="3" Classes="head" Text="传输" />
                                             <TextBlock Grid.Column="4" Classes="head" Text="Hello" />
-                                            <TextBlock Grid.Column="5" Classes="head" Text="加密请求" />
+                                            <TextBlock Grid.Column="5" Classes="head" Text="加密 Ping" />
                                             <TextBlock Grid.Column="6" Classes="head" Text="节点" />
                                             <TextBlock Grid.Column="7" Classes="head" Text="结果" />
                                         </Grid>
@@ -108,7 +108,7 @@
                                                     <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding EndpointText}" />
                                                     <TextBlock Grid.Column="3" Classes="cell" Text="{Binding TransportText}" />
                                                     <TextBlock Grid.Column="4" Classes="cell mono" Text="{Binding HelloText}" />
-                                                    <TextBlock Grid.Column="5" Classes="cell mono" Text="{Binding RpcText}" />
+                                                    <TextBlock Grid.Column="5" Classes="cell mono" Text="{Binding PingText}" />
                                                     <TextBlock Grid.Column="6" Classes="cell mono" Text="{Binding NodeText}" />
                                                     <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="7">
                                                         <Ellipse Classes="dot" Classes.success="{Binding IsSuccess}" Classes.warning="{Binding IsWarning}"

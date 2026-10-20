@@ -131,6 +131,7 @@ namespace MajDHTProber.Tests
             Assert.Equal(4096, local.BlockSize);
             Assert.Equal(DHTCapabilities.Relay, local.Capabilities);
             Assert.Equal(new[] { "127.0.0.1:42000" }, local.BootstrapEndpoints);
+            Assert.False(local.PersistRoutingTable);
             Assert.Empty(NodeOptionsBuilder.Validate(local));
             Assert.Empty(primary.BootstrapEndpoints);
         }

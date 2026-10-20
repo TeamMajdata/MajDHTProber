@@ -12,7 +12,7 @@ using Xunit;
 
 namespace MajDHTProber.Tests
 {
-    /// <summary>Covers the identity vault, settings persistence and record input parsing.</summary>
+    /// <summary>Covers the identity vault, the routing snapshot store, settings persistence and record input parsing.</summary>
     public sealed class StorageTests
     {
         /// <summary>A persisted identity keeps its node identifier and can be deleted.</summary>
@@ -58,6 +58,33 @@ namespace MajDHTProber.Tests
             await Assert.ThrowsAsync<System.ArgumentOutOfRangeException>(() => vault.GetOrCreateAsync("probe", 21, false, TestContext.Current.CancellationToken));
         }
 
+        /// <summary>Routing snapshots round-trip through their files, can be deleted, and a memory-only store keeps nothing.</summary>
+        [Fact]
+        public void PersistsRoutingSnapshots()
+        {
+            using var directory = new TempDirectory();
+            var logger = new LogSink().CreateLogger("路由表");
+            var store = new RoutingSnapshotStore(Path.Combine(directory.Path, "routing"), logger);
+            var snapshot = new byte[] { 1, 2, 3, 4 };
+
+            Assert.True(store.IsPersistent);
+            Assert.Null(store.TryLoad("primary"));
+            store.Save("primary", snapshot);
+
+            Assert.Equal(snapshot, store.TryLoad("primary"));
+            Assert.True(File.Exists(Path.Combine(directory.Path, "routing", "primary" + RoutingSnapshotStore.Extension)));
+            Assert.True(store.Delete("primary"));
+            Assert.False(store.Delete("primary"));
+            Assert.Null(store.TryLoad("primary"));
+            Assert.Throws<System.ArgumentException>(() => store.Save("../escape", snapshot));
+
+            var memory = new RoutingSnapshotStore(null, logger);
+            memory.Save("primary", snapshot);
+            Assert.False(memory.IsPersistent);
+            Assert.Null(memory.TryLoad("primary"));
+            Assert.False(memory.Delete("primary"));
+        }
+
         /// <summary>Settings round-trip through JSON and unreadable files fall back to defaults.</summary>
         [Fact]
         public void RoundTripsSettings()
@@ -70,6 +97,7 @@ namespace MajDHTProber.Tests
                 ListenAddresses = "0.0.0.0, ::",
                 PreferredTransport = DHTTransport.Udp,
                 CapabilityRelay = true,
+                PersistRoutingTable = false,
                 BootstrapEndpoints = { "127.0.0.1:42000" },
                 MinimumLogLevel = LogLevel.Debug,
                 Theme = "Dark",
@@ -81,6 +109,7 @@ namespace MajDHTProber.Tests
             Assert.Equal("0.0.0.0, ::", loaded.ListenAddresses);
             Assert.Equal(DHTTransport.Udp, loaded.PreferredTransport);
             Assert.True(loaded.CapabilityRelay);
+            Assert.False(loaded.PersistRoutingTable);
             Assert.Equal(new[] { "127.0.0.1:42000" }, loaded.BootstrapEndpoints);
             Assert.Equal(LogLevel.Debug, loaded.MinimumLogLevel);
             Assert.Equal("Dark", loaded.Theme);
@@ -88,6 +117,7 @@ namespace MajDHTProber.Tests
 
             File.WriteAllText(path, "{ not json");
             Assert.Equal(new ProberSettings().ListenAddresses, store.Load().ListenAddresses);
+            Assert.True(new ProberSettings().PersistRoutingTable);
         }
 
         /// <summary>Keys and record codes are recognized and invalid input is explained.</summary>

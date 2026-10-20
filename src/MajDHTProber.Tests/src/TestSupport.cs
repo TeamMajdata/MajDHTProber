@@ -102,7 +102,7 @@ namespace MajDHTProber.Tests
             return new IPEndPoint(endpoint.Address, endpoint.UdpPort);
         }
 
-        /// <summary>Creates prober settings for a loopback session without identity work.</summary>
+        /// <summary>Creates prober settings for a loopback session without identity work or persistence.</summary>
         /// <param name="bootstrap">Optional bootstrap endpoints.</param>
         /// <returns>The settings.</returns>
         internal static ProberSettings LoopbackSettings(params IPEndPoint[] bootstrap)
@@ -114,6 +114,7 @@ namespace MajDHTProber.Tests
                 UdpPort = 0,
                 IdentityWorkBits = 0,
                 PersistIdentity = false,
+                PersistRoutingTable = false,
                 EnableNatTraversal = false,
                 RequestTimeoutSeconds = 2,
                 UdpAttempts = 2,
@@ -143,11 +144,13 @@ namespace MajDHTProber.Tests
         /// <param name="sink">The log sink.</param>
         /// <param name="settings">The session settings.</param>
         /// <param name="label">The session label.</param>
+        /// <param name="routing">The store of saved routing tables, or null to keep routing tables in memory only.</param>
         /// <returns>The stopped session.</returns>
-        internal static NodeSession CreateSession(LogSink sink, ProberSettings settings, string label = "测试节点")
+        internal static NodeSession CreateSession(LogSink sink, ProberSettings settings, string label = "测试节点", RoutingSnapshotStore? routing = null)
         {
             var vault = new IdentityVault(null, sink.CreateLogger("身份"));
-            return new NodeSession(label, "test", NodeSessionRole.Primary, settings, vault, new EndpointProber(vault, sink), sink);
+            return new NodeSession(label, "test", NodeSessionRole.Primary, settings, vault, new EndpointProber(vault, sink),
+                routing ?? new RoutingSnapshotStore(null, sink.CreateLogger("路由表")), sink);
         }
 
         /// <summary>Waits until a condition holds.</summary>

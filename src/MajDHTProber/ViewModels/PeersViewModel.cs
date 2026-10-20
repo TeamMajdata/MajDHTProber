@@ -101,14 +101,6 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial int AddTransportIndex { get; set; }
 
-        /// <summary>Gets or sets whether adding runs a neighbor lookup through the new node.</summary>
-        [ObservableProperty]
-        public partial bool AddJoin { get; set; } = true;
-
-        /// <summary>Gets or sets whether adding registers with the new node as relay.</summary>
-        [ObservableProperty]
-        public partial bool AddRegisterRelay { get; set; }
-
         /// <summary>Gets or sets whether the add form is expanded.</summary>
         [ObservableProperty]
         public partial bool IsAddFormOpen { get; set; }
@@ -187,8 +179,6 @@ namespace MajDHTProber.ViewModels
                 result = await Session.AddPeerAsync(endpoint, new AddPeerOptions
                 {
                     Transport = AddTransportIndex == 1 ? DHTTransport.Udp : DHTTransport.Tcp,
-                    Join = AddJoin,
-                    RegisterRelay = AddRegisterRelay,
                 }, cancellationToken);
             });
             if (!completed || result == null)
@@ -196,19 +186,18 @@ namespace MajDHTProber.ViewModels
                 AddResult.Show("添加失败，详情见通知与日志。", StatusTone.Danger);
                 return;
             }
-            if (!result.Added)
+            if (result.Peer == null)
             {
-                AddResult.Show(result.Note ?? "添加失败。", result.Probe.Succeeded ? StatusTone.Warning : StatusTone.Danger);
+                AddResult.Show(result.Note ?? "添加失败。", StatusTone.Danger);
                 return;
             }
-            var summary = "已添加 " + Display.ShortId(result.Probe.NodeId) + "，Hello " + Display.Duration(result.Probe.HelloRoundTrip)
+            var summary = "已添加 " + Display.ShortId(result.Peer.NodeId) + "，耗时 " + Display.Duration(result.Elapsed)
                 + (result.AdmittedToRoutingTable ? "，已进入路由表" : string.Empty)
-                + (result.NeighborsFound.HasValue ? "，邻居查找找到 " + result.NeighborsFound + " 个节点" : string.Empty)
-                + (result.RelayRegistered == true ? "，已注册中继" : string.Empty) + "。"
+                + "，邻居查找后路由表共 " + result.RoutingTableSize + " 个节点。"
                 + (result.Note == null ? string.Empty : " " + result.Note);
             AddResult.Show(summary, result.Note == null ? StatusTone.Success : StatusTone.Warning);
             AddEndpointText = string.Empty;
-            if (result.Probe.NodeId != null && _items.TryGetValue(result.Probe.NodeId, out var item))
+            if (_items.TryGetValue(result.Peer.NodeId, out var item))
             {
                 SelectedPeer = item;
             }

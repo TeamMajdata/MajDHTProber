@@ -15,8 +15,8 @@ using MajDHTProber.Services;
 namespace MajDHTProber.ViewModels.Tools
 {
     /// <summary>
-    /// Repeatedly probes one endpoint like a ping utility: each round performs a signed Hello and one encrypted request from
-    /// a short-lived probe client, then summarizes loss and round-trip times.
+    /// Repeatedly probes one endpoint like a ping utility: each round sends a signed Hello and one encrypted Ping under the
+    /// prober's own probe identity, then summarizes loss and round-trip times.
     /// </summary>
     public sealed partial class PingToolViewModel : OperationViewModel
     {
@@ -155,7 +155,7 @@ namespace MajDHTProber.ViewModels.Tools
             AddPeerResult? result = null;
             if (await RunAsync("添加节点", async () => result = await Session.AddPeerAsync(endpoint, new AddPeerOptions(), cancellationToken)) && result != null)
             {
-                Notify(result.Added ? "已添加到节点列表。" : result.Note ?? "未能添加。", result.Added ? StatusTone.Success : StatusTone.Warning);
+                Notify(result.Added ? "已添加到节点列表并经其查找邻居。" : result.Note ?? "未能添加。", result.Added ? StatusTone.Success : StatusTone.Warning);
             }
         }
 

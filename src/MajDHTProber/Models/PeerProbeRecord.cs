@@ -18,7 +18,7 @@ namespace MajDHTProber.Models
         /// <summary>Gets the probed endpoint.</summary>
         public IPEndPoint? Endpoint { get; init; }
 
-        /// <summary>Gets the transport that was tried first.</summary>
+        /// <summary>Gets the probed transport.</summary>
         public DHTTransport Transport { get; init; }
 
         /// <summary>Gets the measured Hello round trip.</summary>
@@ -33,14 +33,27 @@ namespace MajDHTProber.Models
         /// <returns>The remembered probe record.</returns>
         public static PeerProbeRecord From(EndpointProbeResult result, DateTimeOffset finishedAt)
         {
+            string summary;
+            if (!result.Succeeded)
+            {
+                summary = result.Error ?? "无响应";
+            }
+            else if (result.PingSucceeded)
+            {
+                summary = "Hello 与加密 Ping 均成功";
+            }
+            else
+            {
+                summary = result.Error ?? "Hello 成功，加密 Ping 失败";
+            }
             return new PeerProbeRecord
             {
                 At = finishedAt,
                 Succeeded = result.Succeeded,
                 Endpoint = result.Endpoint,
-                Transport = result.RequestedTransport,
+                Transport = result.Transport,
                 RoundTrip = result.HelloRoundTrip,
-                Summary = result.Succeeded ? (result.RpcSucceeded ? "Hello 与加密请求均成功" : "Hello 成功，加密请求未通过") : result.Error ?? "无响应",
+                Summary = summary,
             };
         }
     }

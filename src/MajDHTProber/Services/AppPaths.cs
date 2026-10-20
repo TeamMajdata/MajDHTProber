@@ -5,7 +5,7 @@ using System.IO;
 
 namespace MajDHTProber.Services
 {
-    /// <summary>Locates the per-user directory that holds the prober settings and stored node identities.</summary>
+    /// <summary>Locates the per-user directory that holds the prober settings, stored node identities and saved routing tables.</summary>
     public sealed class AppPaths
     {
         /// <summary>The environment variable that overrides the data directory, for portable or isolated runs.</summary>
@@ -31,6 +31,9 @@ namespace MajDHTProber.Services
 
         /// <summary>Gets the directory holding stored identity seeds.</summary>
         public string IdentityDirectory => Path.Combine(Root, "identities");
+
+        /// <summary>Gets the directory holding the saved routing tables of hosted nodes.</summary>
+        public string RoutingDirectory => Path.Combine(Root, "routing");
 
         /// <summary>Creates the default paths: the override variable when set, otherwise the roaming application data folder.</summary>
         /// <returns>The default paths.</returns>

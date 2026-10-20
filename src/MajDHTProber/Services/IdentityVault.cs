@@ -86,7 +86,7 @@ namespace MajDHTProber.Services
         /// <exception cref="IOException">A seed file could not be written.</exception>
         public async Task<DHTIdentity> GetOrCreateAsync(string name, int workBits, bool persist, CancellationToken cancellationToken = default)
         {
-            ValidateName(name);
+            StorageName.Validate(name);
             if (workBits < 0 || workBits > 20)
             {
                 throw new ArgumentOutOfRangeException(nameof(workBits));
@@ -131,7 +131,7 @@ namespace MajDHTProber.Services
         /// <exception cref="IOException">The seed file could not be deleted.</exception>
         public bool Delete(string name)
         {
-            ValidateName(name);
+            StorageName.Validate(name);
             bool removed;
             lock (_gate)
             {
@@ -258,24 +258,6 @@ namespace MajDHTProber.Services
         private string? SeedPath(string name)
         {
             return _directory == null ? null : Path.Combine(_directory, name + ".seed");
-        }
-
-        /// <summary>Restricts names to characters that are safe in file names.</summary>
-        /// <param name="name">The identity name.</param>
-        /// <exception cref="ArgumentException">The name is empty or contains other characters.</exception>
-        private static void ValidateName(string name)
-        {
-            if (string.IsNullOrEmpty(name) || name.Length > 64)
-            {
-                throw new ArgumentException("An identity name of 1 to 64 characters is required.", nameof(name));
-            }
-            foreach (var character in name)
-            {
-                if (!((character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '-'))
-                {
-                    throw new ArgumentException("Identity names may contain lowercase letters, digits and hyphens only.", nameof(name));
-                }
-            }
         }
     }
 }

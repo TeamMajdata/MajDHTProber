@@ -40,17 +40,19 @@ namespace MajDHTProber.Services
         /// <param name="store">The settings persistence.</param>
         /// <param name="vault">The identity vault.</param>
         /// <param name="sink">The log sink.</param>
-        public NodeSessionManager(SettingsStore store, IdentityVault vault, LogSink sink)
+        /// <param name="routing">The store of saved routing tables, or null to keep routing tables in memory only.</param>
+        public NodeSessionManager(SettingsStore store, IdentityVault vault, LogSink sink, RoutingSnapshotStore? routing = null)
         {
             _store = store;
             Vault = vault;
             Sink = sink;
+            Routing = routing ?? new RoutingSnapshotStore(null, sink.CreateLogger("路由表"));
             _logger = sink.CreateLogger("会话管理");
             _settings = store.Load();
             sink.MinimumLevel = _settings.MinimumLogLevel;
             Prober = new EndpointProber(vault, sink);
             RoundTrip = new RoundTripTester(Prober, sink);
-            Primary = new NodeSession("主节点", PrimaryIdentityName, NodeSessionRole.Primary, _settings, vault, Prober, sink);
+            Primary = new NodeSession("主节点", PrimaryIdentityName, NodeSessionRole.Primary, _settings, vault, Prober, Routing, sink);
             _sessions.Add(Primary);
             _active = Primary;
         }
@@ -69,6 +71,9 @@ namespace MajDHTProber.Services
 
         /// <summary>Gets the log sink.</summary>
         public LogSink Sink { get; }
+
+        /// <summary>Gets the store of saved routing tables.</summary>
+        public RoutingSnapshotStore Routing { get; }
 
         /// <summary>Gets the endpoint prober.</summary>
         public EndpointProber Prober { get; }
@@ -172,11 +177,11 @@ namespace MajDHTProber.Services
         }
 
         /// <summary>
-        /// Starts a new loopback node that joins through the running hosted nodes and links it with them directly, so the
-        /// nodes can communicate without any external network.
+        /// Starts a new loopback node that joins through the running hosted nodes and connects it with each of them in both
+        /// directions through real Hello exchanges over loopback, so the nodes can communicate without any external network.
         /// </summary>
         /// <param name="request">The node request.</param>
-        /// <param name="cancellationToken">Cancels identity generation and startup.</param>
+        /// <param name="cancellationToken">Cancels identity generation, startup and the connections.</param>
         /// <returns>The new session; it stays in the list in the faulted state when starting fails.</returns>
         /// <exception cref="InvalidOperationException">The maximum number of loopback nodes is reached.</exception>
         /// <exception cref="SettingsValidationException">The derived settings are invalid.</exception>
@@ -203,7 +208,7 @@ namespace MajDHTProber.Services
                     }
                 }
                 var settings = DeriveLocalSettings(_settings, bootstrap, request);
-                session = new NodeSession("本地节点 " + index, "local-" + index, NodeSessionRole.Local, settings, Vault, Prober, Sink);
+                session = new NodeSession("本地节点 " + index, "local-" + index, NodeSessionRole.Local, settings, Vault, Prober, Routing, Sink);
                 _sessions.Add(session);
             }
             Raise(SessionsChanged);
@@ -213,8 +218,8 @@ namespace MajDHTProber.Services
             {
                 if (!ReferenceEquals(other, session) && other.IsRunning)
                 {
-                    other.IntroduceLocalPeer(session);
-                    session.IntroduceLocalPeer(other);
+                    await other.ConnectLocalPeerAsync(session, cancellationToken).ConfigureAwait(false);
+                    await session.ConnectLocalPeerAsync(other, cancellationToken).ConfigureAwait(false);
                 }
             }
             return session;
@@ -297,7 +302,10 @@ namespace MajDHTProber.Services
         /// <param name="primary">The primary settings.</param>
         /// <param name="bootstrap">The endpoints of the running hosted nodes.</param>
         /// <param name="request">The node request.</param>
-        /// <returns>Settings listening on 127.0.0.1 with assigned ports and the protocol parameters of the primary.</returns>
+        /// <returns>
+        /// Settings listening on 127.0.0.1 with assigned ports and the protocol parameters of the primary; the routing table is
+        /// never saved because the assigned ports change with every start.
+        /// </returns>
         internal static ProberSettings DeriveLocalSettings(ProberSettings primary, IEnumerable<IPEndPoint> bootstrap, LocalNodeRequest request)
         {
             var settings = primary.Clone();
@@ -311,6 +319,7 @@ namespace MajDHTProber.Services
             settings.CapabilityProvide = (request.Capabilities & DHTCapabilities.Provide) != 0;
             settings.CapabilityRelay = (request.Capabilities & DHTCapabilities.Relay) != 0;
             settings.PersistIdentity = true;
+            settings.PersistRoutingTable = false;
             settings.AutoStart = false;
             settings.BootstrapEndpoints = new List<string>();
             foreach (var endpoint in bootstrap)

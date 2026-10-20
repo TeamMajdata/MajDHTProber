@@ -20,9 +20,9 @@ namespace MajDHTProber.ViewModels
             SequenceText = sequence == 0 ? string.Empty : "#" + sequence.ToString(CultureInfo.InvariantCulture);
             TimeText = Display.Timestamp(result.StartedAt).Substring(11);
             EndpointText = Display.IPEndPoint(result.Endpoint);
-            TransportText = Display.Transport(result.RequestedTransport);
+            TransportText = Display.Transport(result.Transport);
             HelloText = Display.Duration(result.HelloRoundTrip);
-            RpcText = result.Succeeded ? (result.RpcSucceeded ? Display.Duration(result.RpcRoundTrip) : result.IsPrivate ? "私有节点" : "失败") : Display.None;
+            PingText = result.Succeeded ? (result.PingSucceeded ? Display.Duration(result.PingRoundTrip) : "失败") : Display.None;
             NodeText = Display.ShortId(result.NodeId, 8, 4);
             var mismatch = result.Succeeded && expectedNodeId != null && result.NodeId != expectedNodeId;
             if (!result.Succeeded)
@@ -35,21 +35,16 @@ namespace MajDHTProber.ViewModels
                 Tone = StatusTone.Warning;
                 OutcomeText = "由其他节点应答";
             }
-            else if (!result.RequestedTransportAnswered)
+            else if (!result.PingSucceeded)
             {
                 Tone = StatusTone.Warning;
-                OutcomeText = Display.Transport(result.RequestedTransport) + " 无应答，已回退到 "
-                    + Display.Transport(result.RequestedTransport == DHTTransport.Tcp ? DHTTransport.Udp : DHTTransport.Tcp);
-            }
-            else if (!result.RpcSucceeded)
-            {
-                Tone = StatusTone.Warning;
-                OutcomeText = result.IsPrivate ? "Hello 成功（私有节点，未测加密请求）" : "Hello 成功，加密请求失败（通告端点可能不可达）";
+                OutcomeText = result.Error ?? "Hello 成功，加密 Ping 失败";
             }
             else
             {
                 Tone = StatusTone.Success;
-                OutcomeText = "正常";
+                OutcomeText = (result.IsPrivate ? "正常（私有节点）" : "正常")
+                    + (result.ObservedEndpoint == null ? string.Empty : "，对方观察到本机 " + Display.IPEndPoint(result.ObservedEndpoint));
             }
         }
 
@@ -65,14 +60,14 @@ namespace MajDHTProber.ViewModels
         /// <summary>Gets the probed endpoint.</summary>
         public string EndpointText { get; }
 
-        /// <summary>Gets the transport tried first.</summary>
+        /// <summary>Gets the probed transport.</summary>
         public string TransportText { get; }
 
         /// <summary>Gets the Hello round trip.</summary>
         public string HelloText { get; }
 
-        /// <summary>Gets the encrypted request round trip or its failure.</summary>
-        public string RpcText { get; }
+        /// <summary>Gets the encrypted Ping round trip or its failure.</summary>
+        public string PingText { get; }
 
         /// <summary>Gets the shortened identifier of the answering node.</summary>
         public string NodeText { get; }

@@ -142,6 +142,10 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial bool PersistIdentity { get; set; }
 
+        /// <summary>Gets or sets whether the primary node saves its routing table when it stops and restores it when it starts.</summary>
+        [ObservableProperty]
+        public partial bool PersistRoutingTable { get; set; }
+
         /// <summary>Gets or sets whether NAT traversal is enabled.</summary>
         [ObservableProperty]
         public partial bool EnableNatTraversal { get; set; }
@@ -258,6 +262,7 @@ namespace MajDHTProber.ViewModels
                 BootstrapEndpoints = bootstrap,
                 IdentityWorkBits = (int)(IdentityWorkBits ?? 12),
                 PersistIdentity = PersistIdentity,
+                PersistRoutingTable = PersistRoutingTable,
                 EnableNatTraversal = EnableNatTraversal,
                 RequestTimeoutSeconds = (double)(RequestTimeoutSeconds ?? 5),
                 UdpAttempts = (int)(UdpAttempts ?? 3),
@@ -463,6 +468,7 @@ namespace MajDHTProber.ViewModels
                 BootstrapText = string.Join(Environment.NewLine, settings.BootstrapEndpoints);
                 IdentityWorkBits = settings.IdentityWorkBits;
                 PersistIdentity = settings.PersistIdentity;
+                PersistRoutingTable = settings.PersistRoutingTable;
                 EnableNatTraversal = settings.EnableNatTraversal;
                 RequestTimeoutSeconds = (decimal)settings.RequestTimeoutSeconds;
                 UdpAttempts = settings.UdpAttempts;

@@ -16,8 +16,8 @@ namespace MajDHTProber.Tests
     /// <summary>Probes real loopback nodes over TCP and UDP.</summary>
     public sealed class EndpointProberTests
     {
-        /// <summary>A live node answers the Hello and the encrypted follow-up request over each transport.</summary>
-        /// <param name="transport">The transport tried first.</param>
+        /// <summary>A live node answers the signed Hello and the encrypted Ping over each transport.</summary>
+        /// <param name="transport">The probed transport.</param>
         /// <returns>Completion after the probe.</returns>
         [Theory]
         [InlineData(DHTTransport.Tcp)]
@@ -27,20 +27,25 @@ namespace MajDHTProber.Tests
             using var timeout = TestNodes.Timeout();
             await using var target = await TestNodes.StartAsync();
             var sink = new LogSink();
-            var prober = new EndpointProber(new IdentityVault(null, sink.CreateLogger("身份")), sink);
+            var vault = new IdentityVault(null, sink.CreateLogger("身份"));
+            var prober = new EndpointProber(vault, sink);
             var endpoint = transport == DHTTransport.Tcp ? TestNodes.TcpEndpoint(target) : TestNodes.UdpEndpoint(target);
 
             var result = await prober.ProbeAsync(endpoint, transport, TestNodes.ProbeOptions(), timeout.Token);
 
             Assert.True(result.Succeeded, result.Error);
-            Assert.True(result.RpcSucceeded);
-            Assert.True(result.RequestedTransportAnswered);
+            Assert.True(result.PingSucceeded, result.Error);
+            Assert.Null(result.Error);
             Assert.False(result.IsPrivate);
+            Assert.Equal(transport, result.Transport);
             Assert.Equal(target.NodeId, result.NodeId);
             Assert.Equal(target.NodeId, result.Peer?.NodeId);
             Assert.NotNull(result.HelloRoundTrip);
-            Assert.NotNull(result.RpcRoundTrip);
-            Assert.Contains(result.Routes, route => route.Transport == transport);
+            Assert.NotNull(result.PingRoundTrip);
+            Assert.Equal(IPAddress.Loopback, result.ObservedEndpoint?.Address);
+            Assert.True(result.Transmissions >= 2);
+            Assert.Equal(0, result.LostTransmissions);
+            Assert.DoesNotContain(target.KnownPeers, peer => peer.NodeId == vault.TryGetCachedNodeId(EndpointProber.IdentityName));
             Assert.Contains(sink.Snapshot(), entry => entry.Category == "探测" && entry.Message.Contains("成功", StringComparison.Ordinal));
         }
 
@@ -60,9 +65,11 @@ namespace MajDHTProber.Tests
             var result = await prober.ProbeAsync(new IPEndPoint(IPAddress.Loopback, port), DHTTransport.Tcp, TestNodes.ProbeOptions(), timeout.Token);
 
             Assert.False(result.Succeeded);
-            Assert.False(result.RpcSucceeded);
+            Assert.False(result.PingSucceeded);
             Assert.Null(result.NodeId);
+            Assert.Null(result.Peer);
             Assert.False(string.IsNullOrEmpty(result.Error));
+            Assert.True(result.LostTransmissions > 0);
             Assert.True(result.Elapsed < TimeSpan.FromSeconds(20));
         }
 

@@ -42,7 +42,8 @@ namespace MajDHTProber
                 var sink = new LogSink();
                 var logger = sink.CreateLogger("探测器");
                 _vault = new IdentityVault(paths.IdentityDirectory, sink.CreateLogger("身份"));
-                _manager = new NodeSessionManager(new SettingsStore(paths.SettingsFile, sink.CreateLogger("设置")), _vault, sink);
+                _manager = new NodeSessionManager(new SettingsStore(paths.SettingsFile, sink.CreateLogger("设置")), _vault, sink,
+                    new RoutingSnapshotStore(paths.RoutingDirectory, sink.CreateLogger("路由表")));
                 var window = new MainWindow();
                 var interaction = new AvaloniaUserInteraction(() => window);
                 interaction.ApplyTheme(_manager.Settings.Theme);

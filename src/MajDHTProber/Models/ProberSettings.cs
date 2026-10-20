@@ -55,6 +55,12 @@ namespace MajDHTProber.Models
         /// <summary>Gets or sets whether node identities are stored on disk so node identifiers survive restarts.</summary>
         public bool PersistIdentity { get; set; } = true;
 
+        /// <summary>
+        /// Gets or sets whether the primary node saves its routing table when it stops and re-contacts the saved nodes when it
+        /// starts, so it rejoins the network without depending on bootstrap endpoints alone.
+        /// </summary>
+        public bool PersistRoutingTable { get; set; } = true;
+
         /// <summary>Gets or sets whether relay registration, reachability checks and hole punching are enabled.</summary>
         public bool EnableNatTraversal { get; set; } = true;
 

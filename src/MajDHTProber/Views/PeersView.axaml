@@ -39,19 +39,15 @@
                     <StackPanel Spacing="10">
                         <TextBlock Classes="h3" Text="手动添加节点" />
                         <TextBlock Classes="caption"
-                                   Text="先用独立探针完成签名 Hello 与一次加密请求，确认端点上的节点身份，再把它作为已验证联系人加入当前节点的路由表。支持 IP:端口、[IPv6]:端口 和 主机名:端口。" />
+                                   Text="当前节点直接向该端点发送签名 Hello（先用所选传输，无应答时在同一端口改用另一种），把应答节点作为已验证联系人加入路由表并经它查找邻居；若它具备中继能力且本节点已启用 NAT 穿透，则同时注册为中继。支持 IP:端口、[IPv6]:端口 和 主机名:端口。" />
                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                             <TextBox Classes="mono" Text="{Binding AddEndpointText}" PlaceholderText="例如 192.168.1.20:42000" />
                             <ComboBox Grid.Column="1" Width="120" ItemsSource="{Binding TransportOptions}" SelectedIndex="{Binding AddTransportIndex}" />
                             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                                <Button Classes="accent" Command="{Binding AddPeerCommand}" Content="探测并添加" />
+                                <Button Classes="accent" Command="{Binding AddPeerCommand}" Content="添加" />
                                 <Button Command="{Binding AddPeerCancelCommand}" Content="取消" IsVisible="{Binding AddPeerCommand.IsRunning}" />
                             </StackPanel>
                         </Grid>
-                        <StackPanel Orientation="Horizontal" Spacing="20">
-                            <CheckBox Content="添加后经该节点查找邻居（加入网络）" IsChecked="{Binding AddJoin}" />
-                            <CheckBox Content="若其具备中继能力，注册为中继" IsChecked="{Binding AddRegisterRelay}" />
-                        </StackPanel>
                         <ProgressBar IsIndeterminate="True" IsVisible="{Binding AddPeerCommand.IsRunning}" />
                         <ContentControl Content="{Binding AddResult}" />
                     </StackPanel>
@@ -162,7 +158,7 @@
                                     </StackPanel>
 
                                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
-                                        <Button Classes="accent" Command="{Binding ProbeCommand}" ToolTip.Tip="用独立探针对每个通告端点分别做 TCP / UDP Hello + 加密请求">
+                                        <Button Classes="accent" Command="{Binding ProbeCommand}" ToolTip.Tip="以独立探针身份对每个通告端点分别做 TCP / UDP 签名 Hello + 加密 Ping">
                                             <StackPanel Orientation="Horizontal" Spacing="7">
                                                 <c:LineIcon Data="{StaticResource Icon.Radar}" />
                                                 <TextBlock Text="探测端点" />

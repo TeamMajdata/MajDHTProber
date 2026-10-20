@@ -14,13 +14,11 @@ namespace MajDHTProber.Services
         /// <param name="peer">The authenticated contact.</param>
         /// <param name="verifiedAddress">The address at which the contact proved an advertised endpoint, or null.</param>
         /// <param name="inTable">Whether the contact is a table entry after the observation.</param>
-        /// <param name="injected">Whether the prober injected the contact rather than the node observing it.</param>
-        public RoutingObservation(DHTPeer peer, IPAddress? verifiedAddress, bool inTable, bool injected)
+        public RoutingObservation(DHTPeer peer, IPAddress? verifiedAddress, bool inTable)
         {
             Peer = peer;
             VerifiedAddress = verifiedAddress;
             InTable = inTable;
-            Injected = injected;
         }
 
         /// <summary>Gets the authenticated contact.</summary>
@@ -31,14 +29,11 @@ namespace MajDHTProber.Services
 
         /// <summary>Gets whether the contact is a table entry after the observation.</summary>
         public bool InTable { get; }
-
-        /// <summary>Gets whether the prober injected the contact.</summary>
-        public bool Injected { get; }
     }
 
     /// <summary>
-    /// Wraps the library's routing table, reporting every contact the node observes or drops, and lets the prober inject
-    /// contacts it verified itself, which is how manually added nodes become lookup hops of a running node.
+    /// Wraps the library's routing table and reports every contact the node observes or drops, so the prober can keep its
+    /// peer list in step with the node without changing how the node admits contacts.
     /// </summary>
     /// <remarks>
     /// The node calls every member concurrently and expects quick returns without network I/O. Event handlers therefore
@@ -64,7 +59,7 @@ namespace MajDHTProber.Services
             _inner = inner;
         }
 
-        /// <summary>Raised after a contact was observed or injected; raised on node threads.</summary>
+        /// <summary>Raised after the node observed a contact; raised on node threads.</summary>
         public event EventHandler<RoutingObservation>? Observed;
 
         /// <summary>Raised after the node dropped a contact after a failure or because it became private; raised on node threads.</summary>
@@ -89,7 +84,7 @@ namespace MajDHTProber.Services
         public void Observe(DHTPeer peer, IPAddress? verifiedAddress)
         {
             _inner.Observe(peer, verifiedAddress);
-            Raise(Observed, new RoutingObservation(peer, verifiedAddress, Contains(peer.NodeId), false));
+            Raise(Observed, new RoutingObservation(peer, verifiedAddress, Contains(peer.NodeId)));
         }
 
         /// <summary>Removes a contact from the decorated table and reports it.</summary>
@@ -107,32 +102,6 @@ namespace MajDHTProber.Services
         public IReadOnlyList<DHTPeer> Closest(string routingId, int count)
         {
             return _inner.Closest(routingId, count);
-        }
-
-        /// <summary>
-        /// Offers a contact that the prober authenticated itself, such as the answer to a Hello probe, as if the node had
-        /// observed it at a verified address.
-        /// </summary>
-        /// <param name="peer">The authenticated, non-private contact.</param>
-        /// <param name="verifiedAddress">The address at which the contact answered.</param>
-        /// <returns>Whether the contact is a table entry afterwards; full buckets and per-network limits can refuse it.</returns>
-        /// <exception cref="InvalidOperationException">The owning node has not initialized the table yet.</exception>
-        public bool Inject(DHTPeer peer, IPAddress verifiedAddress)
-        {
-            if (_localNodeId == null)
-            {
-                throw new InvalidOperationException("The routing table is not bound to a node yet.");
-            }
-            if (peer.Reachability == DHTReachability.Private)
-            {
-                // Private nodes are never lookup hops; the node itself would drop them as well.
-                Raise(Observed, new RoutingObservation(peer, verifiedAddress, false, true));
-                return false;
-            }
-            _inner.Observe(peer, verifiedAddress);
-            var admitted = Contains(peer.NodeId);
-            Raise(Observed, new RoutingObservation(peer, verifiedAddress, admitted, true));
-            return admitted;
         }
 
         /// <summary>Removes a contact on behalf of the user without reporting it as a node failure.</summary>

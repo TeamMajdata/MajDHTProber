@@ -8,6 +8,9 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using MajDHTNetwork;
+using MajDHTNetwork.Protocol;
+using MajDHTNetwork.Transport;
+using MajDHTProber.Infrastructure;
 using MajDHTProber.Logging;
 using MajDHTProber.Models;
 using Microsoft.Extensions.Logging;
@@ -73,23 +76,25 @@ namespace MajDHTProber.Services
     }
 
     /// <summary>
-    /// Probes node endpoints from short-lived client nodes that use a dedicated probe identity, so probing never changes the
-    /// hosted nodes' routing state. A probe performs the library's signed Hello exchange with the endpoint, then sends one
-    /// encrypted lookup request to the advertised endpoints of whichever node answered.
+    /// Probes node endpoints through the library's public protocol API. A probe binds a transport of its own under a
+    /// dedicated probe identity, sends the signed Hello request that learns the signed contact listening at the endpoint,
+    /// and then sends one encrypted Ping request to the same endpoint over the same transport, timing both exchanges.
     /// </summary>
     /// <remarks>
-    /// The library has no public ping operation; a bootstrap of a fresh client is its closest public equivalent. The client
-    /// listens on a wildcard address without advertising any endpoint, so remote nodes answer it but never add it to their
-    /// routing tables.
+    /// The probe advertises no endpoint and answers no request, so remote nodes answer it but never use it as a routing
+    /// contact. Probing never involves the hosted nodes, so it never changes their routing state either.
     /// </remarks>
     public sealed class EndpointProber
     {
         /// <summary>The name of the shared probe identity in the identity vault.</summary>
         public const string IdentityName = "probe";
 
+        /// <summary>The lease of the probe's own signed contact, which only has to outlive one probe.</summary>
+        private static readonly TimeSpan s_contactLifetime = TimeSpan.FromHours(1);
+
         /// <summary>The identity vault providing the probe identity.</summary>
         private readonly IdentityVault _vault;
-        /// <summary>The logger handed to probe client nodes.</summary>
+        /// <summary>The logger handed to probe transports and client nodes.</summary>
         private readonly ILogger _clientLogger;
         /// <summary>The prober diagnostics logger.</summary>
         private readonly ILogger _logger;
@@ -104,9 +109,9 @@ namespace MajDHTProber.Services
             _logger = sink.CreateLogger("探测");
         }
 
-        /// <summary>Probes one endpoint.</summary>
+        /// <summary>Probes one endpoint over one transport with a signed Hello followed by an encrypted Ping.</summary>
         /// <param name="endpoint">The endpoint to probe.</param>
-        /// <param name="transport">The transport tried first; the library falls back to the other transport.</param>
+        /// <param name="transport">The transport; the probe never falls back to the other transport.</param>
         /// <param name="options">The probe tuning.</param>
         /// <param name="cancellationToken">Cancels the probe.</param>
         /// <returns>The probe outcome; failures to reach the endpoint are reported in the result rather than thrown.</returns>
@@ -118,49 +123,67 @@ namespace MajDHTProber.Services
             var identity = await _vault.GetOrCreateAsync(IdentityName, options.IdentityWorkBits, options.PersistIdentity, cancellationToken)
                 .ConfigureAwait(false);
             var target = EndpointParser.Format(endpoint);
-            _logger.LogDebug("开始探测 {Endpoint}（优先 {Transport}）。", target, transport);
+            _logger.LogDebug("开始探测 {Endpoint}（{Transport}）。", target, Display.Transport(transport));
             var startedAt = DateTimeOffset.UtcNow;
             var stopwatch = Stopwatch.StartNew();
-            var capture = new HelloCapture(endpoint.Address, stopwatch);
-            var table = new TrackingRoutingTable();
-            table.Observed += capture.OnObserved;
-            table.Removed += capture.OnRemoved;
-            var node = new MajDHTNode(CreateOptions(endpoint, transport, options, true), identity,
-                new MemoryDHTContentStore(1024 * 1024, 256), table);
+            var counter = new TransmissionCounter();
+            HelloOutcome? hello = null;
+            var ping = PingOutcome.NotAttempted;
             string? error = null;
-            var bootstrapped = false;
-            TimeSpan? finishedAt = null;
-            DHTPeerStatistics? statistics;
-            try
+            await using (var socket = new SocketTransport(CreateProbeOptions(endpoint, transport, options), RejectInbound, _clientLogger))
             {
-                await node.StartAsync(cancellationToken).ConfigureAwait(false);
-                await node.BootstrapAsync(cancellationToken).ConfigureAwait(false);
-                bootstrapped = true;
-                finishedAt = stopwatch.Elapsed;
+                try
+                {
+                    socket.Bind();
+                    var self = DHTPeer.Create(identity, Array.Empty<DHTEndpoint>(), DHTCapabilities.Download, DHTReachability.Unknown, false,
+                        null, Array.Empty<DHTPeer>(), s_contactLifetime);
+                    socket.Run();
+                    hello = await HelloAsync(socket, identity, self, endpoint, transport, counter, cancellationToken).ConfigureAwait(false);
+                    if (options.IdentityWorkBits > 0 && hello.Peer.IdentityWork < options.IdentityWorkBits)
+                    {
+                        error = "应答节点的身份工作量为 " + hello.Peer.IdentityWork + " 位，低于要求的 " + options.IdentityWorkBits + " 位，已跳过加密 Ping。";
+                    }
+                    else
+                    {
+                        ping = await PingAsync(socket, identity, self, hello.Peer, endpoint, transport, counter, cancellationToken).ConfigureAwait(false);
+                        error = ping.Error;
+                    }
+                }
+                catch (IOException exception)
+                {
+                    error = "端点未响应 Hello 请求（" + Display.Transport(transport) + " 超时或被拒绝）。";
+                    _logger.LogDebug(exception, "Hello 交换失败。");
+                }
+                catch (SocketException exception)
+                {
+                    error = "本地套接字错误：" + exception.SocketErrorCode + "。";
+                }
+                catch (Exception exception) when (exception is InvalidDataException or CryptographicException or ArgumentException)
+                {
+                    error = "Hello 响应无效：" + exception.GetType().Name + "。";
+                }
             }
-            catch (IOException)
+            stopwatch.Stop();
+            var result = new EndpointProbeResult
             {
-                error = "端点未响应 Hello 请求（TCP 与 UDP 均超时、被拒绝或认证失败）。";
-            }
-            catch (SocketException exception)
-            {
-                error = "本地套接字错误：" + exception.SocketErrorCode + "。";
-            }
-            catch (Exception exception) when (exception is InvalidDataException or CryptographicException or ArgumentException)
-            {
-                error = "握手数据无效：" + exception.GetType().Name + "。";
-            }
-            finally
-            {
-                var answered = capture.Read();
-                statistics = answered.NodeId == null ? null : node.GetPeerStatistics(answered.NodeId);
-                await node.DisposeAsync().ConfigureAwait(false);
-            }
-            var result = Compose(endpoint, transport, startedAt, stopwatch.Elapsed, capture.Read(), statistics, bootstrapped, finishedAt, error);
+                Endpoint = endpoint,
+                Transport = transport,
+                StartedAt = startedAt,
+                Elapsed = stopwatch.Elapsed,
+                HelloSucceeded = hello != null,
+                HelloRoundTrip = hello?.RoundTrip,
+                ObservedEndpoint = hello?.ObservedEndpoint,
+                PingSucceeded = ping.Succeeded,
+                PingRoundTrip = ping.RoundTrip,
+                Peer = hello?.Peer,
+                Transmissions = counter.Sent,
+                LostTransmissions = counter.Lost,
+                Error = error,
+            };
             if (result.Succeeded)
             {
-                _logger.LogInformation("探测 {Endpoint} 成功：节点 {NodeId}，Hello {Rtt:F1} ms，加密请求{Rpc}。", target,
-                    ShortId(result.NodeId), result.HelloRoundTrip?.TotalMilliseconds ?? 0, result.RpcSucceeded ? "成功" : "未通过");
+                _logger.LogInformation("探测 {Endpoint} 成功：节点 {NodeId}，Hello {Hello}，加密 Ping {Ping}。", target, Display.ShortId(result.NodeId),
+                    Display.Duration(result.HelloRoundTrip), result.PingSucceeded ? Display.Duration(result.PingRoundTrip) : "失败");
             }
             else
             {
@@ -186,7 +209,7 @@ namespace MajDHTProber.Services
             var identity = await _vault.GetOrCreateAsync(IdentityName, options.IdentityWorkBits, options.PersistIdentity, cancellationToken)
                 .ConfigureAwait(false);
             var table = new TrackingRoutingTable();
-            var node = new MajDHTNode(CreateOptions(bootstrap, transport, options, false), identity, new MemoryDHTContentStore(), table);
+            var node = new MajDHTNode(CreateClientOptions(bootstrap, transport, options), identity, new MemoryDHTContentStore(), table);
             try
             {
                 await node.StartAsync(cancellationToken).ConfigureAwait(false);
@@ -200,28 +223,22 @@ namespace MajDHTProber.Services
             }
         }
 
-        /// <summary>Creates the options of a probe or client node.</summary>
+        /// <summary>Creates the options of a short-lived client node.</summary>
         /// <param name="bootstrap">The single bootstrap endpoint.</param>
         /// <param name="transport">The preferred transport.</param>
-        /// <param name="options">The probe tuning.</param>
-        /// <param name="minimalLookup">Whether the follow-up lookup queries only the answering node.</param>
-        /// <returns>The node options.</returns>
-        internal DHTNodeOptions CreateOptions(IPEndPoint bootstrap, DHTTransport transport, ProbeOptions options, bool minimalLookup)
+        /// <param name="options">The client tuning.</param>
+        /// <returns>The node options: a wildcard listener on assigned ports that advertises no endpoint.</returns>
+        internal DHTNodeOptions CreateClientOptions(IPEndPoint bootstrap, DHTTransport transport, ProbeOptions options)
         {
-            var wildcard = bootstrap.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any;
             return new DHTNodeOptions
             {
-                ListenAddresses = new List<IPAddress> { wildcard },
+                ListenAddresses = new List<IPAddress> { WildcardFor(bootstrap) },
                 TcpPort = 0,
                 UdpPort = 0,
                 PreferredTransport = transport,
                 Capabilities = DHTCapabilities.Download,
                 BootstrapEndpoints = new List<IPEndPoint> { bootstrap },
                 EnableNatTraversal = false,
-                BucketSize = minimalLookup ? 1 : 8,
-                MaxLookupQueries = minimalLookup ? 1 : 64,
-                LookupParallelism = minimalLookup ? 1 : 3,
-                DisjointLookupPaths = minimalLookup ? 1 : 3,
                 MaintenanceInterval = TimeSpan.FromHours(1),
                 IdentityWorkBits = options.IdentityWorkBits,
                 RequestTimeout = options.RequestTimeout,
@@ -230,139 +247,178 @@ namespace MajDHTProber.Services
             };
         }
 
-        /// <summary>Combines the captured events and statistics into a result.</summary>
-        /// <param name="endpoint">The probed endpoint.</param>
-        /// <param name="transport">The transport tried first.</param>
-        /// <param name="startedAt">When the probe started.</param>
-        /// <param name="elapsed">The total probe duration.</param>
-        /// <param name="answered">The captured Hello and lookup events.</param>
-        /// <param name="statistics">The probe client's statistics for the answering node.</param>
-        /// <param name="bootstrapped">Whether the bootstrap call completed.</param>
-        /// <param name="finishedAt">When the bootstrap call completed, measured from the start.</param>
-        /// <param name="error">The failure description, or null.</param>
-        /// <returns>The probe result.</returns>
-        private static EndpointProbeResult Compose(IPEndPoint endpoint, DHTTransport transport, DateTimeOffset startedAt, TimeSpan elapsed,
-            HelloCapture.Result answered, DHTPeerStatistics? statistics, bool bootstrapped, TimeSpan? finishedAt, string? error)
+        /// <summary>Creates the transport options of one probe: a wildcard listener of the probed transport on an assigned port.</summary>
+        /// <param name="endpoint">The probed endpoint, which selects the address family.</param>
+        /// <param name="transport">The probed transport.</param>
+        /// <param name="options">The probe tuning.</param>
+        /// <returns>The transport options.</returns>
+        internal DHTNodeOptions CreateProbeOptions(IPEndPoint endpoint, DHTTransport transport, ProbeOptions options)
         {
-            var routes = statistics?.Routes ?? (IReadOnlyList<DHTRouteStatistics>)Array.Empty<DHTRouteStatistics>();
-            var requestedAnswered = false;
-            foreach (var route in routes)
+            return new DHTNodeOptions
             {
-                requestedAnswered |= route.Transport == transport && route.SentPackets > route.LostPackets;
-            }
-            var helloSucceeded = bootstrapped || answered.HelloAt.HasValue;
-            var rpcSucceeded = bootstrapped && answered.Peer != null && !answered.PeerRemoved;
-            return new EndpointProbeResult
-            {
-                Endpoint = endpoint,
-                RequestedTransport = transport,
-                StartedAt = startedAt,
-                Elapsed = elapsed,
-                HelloSucceeded = helloSucceeded,
-                HelloRoundTrip = answered.HelloAt,
-                RpcSucceeded = rpcSucceeded,
-                RpcRoundTrip = rpcSucceeded && finishedAt.HasValue && answered.HelloAt.HasValue ? finishedAt - answered.HelloAt : null,
-                RequestedTransportAnswered = requestedAnswered,
-                Peer = answered.Peer,
-                NodeId = answered.NodeId,
-                IsPrivate = answered.Peer == null && answered.NodeId != null,
-                Routes = routes,
-                Error = helloSucceeded ? null : error ?? "端点未响应。",
+                ListenAddresses = new List<IPAddress> { WildcardFor(endpoint) },
+                TcpPort = transport == DHTTransport.Tcp ? 0 : null,
+                UdpPort = transport == DHTTransport.Udp ? 0 : null,
+                PreferredTransport = transport,
+                Capabilities = DHTCapabilities.Download,
+                EnableNatTraversal = false,
+                IdentityWorkBits = options.IdentityWorkBits,
+                RequestTimeout = options.RequestTimeout,
+                UdpAttempts = options.UdpAttempts,
+                Logger = _clientLogger,
             };
         }
 
-        /// <summary>Shortens a node identifier for log messages.</summary>
-        /// <param name="nodeId">The node identifier.</param>
-        /// <returns>The first twelve characters, or a dash.</returns>
-        private static string ShortId(string? nodeId)
+        /// <summary>Sends the signed Hello request and authenticates the answer.</summary>
+        /// <param name="socket">The bound and running probe transport.</param>
+        /// <param name="identity">The probe identity.</param>
+        /// <param name="self">The probe's signed contact.</param>
+        /// <param name="endpoint">The probed endpoint.</param>
+        /// <param name="transport">The probed transport.</param>
+        /// <param name="counter">Counts the transmissions of the exchange.</param>
+        /// <param name="cancellationToken">Cancels the exchange.</param>
+        /// <returns>The answering contact, the round trip and the endpoint the responder observed for the probe.</returns>
+        /// <exception cref="IOException">The endpoint did not answer.</exception>
+        /// <exception cref="CryptographicException">The answer was forged, miscorrelated or sent by the probe identity itself.</exception>
+        /// <exception cref="InvalidDataException">The answer is malformed.</exception>
+        /// <exception cref="OperationCanceledException">The exchange was cancelled.</exception>
+        private static async Task<HelloOutcome> HelloAsync(SocketTransport socket, DHTIdentity identity, DHTPeer self, IPEndPoint endpoint,
+            DHTTransport transport, TransmissionCounter counter, CancellationToken cancellationToken)
         {
-            return nodeId == null ? "-" : nodeId.Length <= 12 ? nodeId : nodeId.Substring(0, 12);
+            var request = new Packet(self, Crypto.Random(Packet.RequestIdLength), (byte)Operation.Hello, ReadOnlyMemory<byte>.Empty);
+            var envelope = request.SealHello(identity);
+            var stopwatch = Stopwatch.StartNew();
+            using var encoded = await socket.ExchangeAtAsync(transport, endpoint, envelope, cancellationToken, counter).ConfigureAwait(false);
+            stopwatch.Stop();
+            // The contact and the observed endpoint are owned copies, so the frame is released when this method ends.
+            var response = Packet.Open(identity, encoded.Bytes);
+            VerifyResponse(response, request, identity, null);
+            using var reader = new Wire(ResponseStatus.ReadResult(response.Body));
+            var observed = HelloMessage.ReadResponse(reader);
+            return new HelloOutcome(response.Sender, stopwatch.Elapsed, observed);
         }
 
-        /// <summary>
-        /// Captures, from the probe client's routing table, which node answered the Hello at the probed address and whether
-        /// the follow-up lookup request to it failed.
-        /// </summary>
-        private sealed class HelloCapture
+        /// <summary>Sends one encrypted Ping request to the node that answered the Hello, reporting failures in the outcome.</summary>
+        /// <param name="socket">The bound and running probe transport.</param>
+        /// <param name="identity">The probe identity.</param>
+        /// <param name="self">The probe's signed contact.</param>
+        /// <param name="peer">The contact that answered the Hello.</param>
+        /// <param name="endpoint">The probed endpoint.</param>
+        /// <param name="transport">The probed transport.</param>
+        /// <param name="counter">Counts the transmissions of the exchange.</param>
+        /// <param name="cancellationToken">Cancels the exchange.</param>
+        /// <returns>The outcome with the round trip or a failure description.</returns>
+        /// <exception cref="OperationCanceledException">The exchange was cancelled.</exception>
+        private static async Task<PingOutcome> PingAsync(SocketTransport socket, DHTIdentity identity, DHTPeer self, DHTPeer peer, IPEndPoint endpoint,
+            DHTTransport transport, TransmissionCounter counter, CancellationToken cancellationToken)
         {
-            /// <summary>Protects the captured values.</summary>
-            private readonly Lock _gate = new Lock();
-            /// <summary>The probed address, which the node reports as the verified address of the Hello answer.</summary>
-            private readonly IPAddress _address;
-            /// <summary>Measures elapsed time since the probe started.</summary>
-            private readonly Stopwatch _stopwatch;
-            /// <summary>The answering contact, when the node retained it.</summary>
-            private DHTPeer? _peer;
-            /// <summary>The answering node's identifier.</summary>
-            private string? _nodeId;
-            /// <summary>When the Hello answer was authenticated.</summary>
-            private TimeSpan? _helloAt;
-            /// <summary>Whether the client dropped the answering node after a failed request.</summary>
-            private bool _peerRemoved;
-
-            /// <summary>Creates a capture for one probed address.</summary>
-            /// <param name="address">The probed address.</param>
-            /// <param name="stopwatch">The running probe stopwatch.</param>
-            internal HelloCapture(IPAddress address, Stopwatch stopwatch)
+            var request = new Packet(self, Crypto.Random(Packet.RequestIdLength), (byte)Operation.Ping, ReadOnlyMemory<byte>.Empty);
+            var envelope = request.Seal(identity, peer);
+            var stopwatch = Stopwatch.StartNew();
+            OwnedMemory encoded;
+            try
             {
-                _address = address;
-                _stopwatch = stopwatch;
+                encoded = await socket.ExchangeAtAsync(transport, endpoint, envelope, cancellationToken, counter).ConfigureAwait(false);
             }
-
-            /// <summary>Records the first contact observed at the probed address.</summary>
-            /// <param name="sender">The routing table.</param>
-            /// <param name="observation">The observation.</param>
-            internal void OnObserved(object? sender, RoutingObservation observation)
+            catch (Exception exception) when (exception is IOException or SocketException)
             {
-                lock (_gate)
+                return PingOutcome.Failed("加密 Ping 未获应答（" + Display.Transport(transport) + " 超时或被拒绝）。");
+            }
+            stopwatch.Stop();
+            using (encoded)
+            {
+                Packet response;
+                try
                 {
-                    if (_peer == null && _nodeId == null && _address.Equals(observation.VerifiedAddress))
-                    {
-                        _peer = observation.Peer;
-                        _nodeId = observation.Peer.NodeId;
-                        _helloAt = _stopwatch.Elapsed;
-                    }
+                    response = Packet.Open(identity, encoded.Bytes);
+                    VerifyResponse(response, request, identity, peer.NodeId);
                 }
-            }
-
-            /// <summary>
-            /// Records a removal: before any observation it is a private node answering the Hello, afterwards it is the
-            /// failure of the follow-up request.
-            /// </summary>
-            /// <param name="sender">The routing table.</param>
-            /// <param name="nodeId">The removed node.</param>
-            internal void OnRemoved(object? sender, string nodeId)
-            {
-                lock (_gate)
+                catch (Exception exception) when (exception is InvalidDataException or CryptographicException)
                 {
-                    if (_nodeId == null)
-                    {
-                        _nodeId = nodeId;
-                        _helloAt = _stopwatch.Elapsed;
-                    }
-                    else if (_peer != null && _peer.NodeId == nodeId)
-                    {
-                        _peerRemoved = true;
-                    }
+                    return PingOutcome.Failed("加密 Ping 的响应无效：" + exception.GetType().Name + "。");
                 }
-            }
-
-            /// <summary>Returns a consistent copy of the captured values.</summary>
-            /// <returns>The captured values.</returns>
-            internal Result Read()
-            {
-                lock (_gate)
+                try
                 {
-                    return new Result(_peer, _nodeId, _helloAt, _peerRemoved);
+                    using var reader = new Wire(ResponseStatus.ReadResult(response.Body));
+                    reader.End();
                 }
+                catch (IOException)
+                {
+                    return PingOutcome.Failed("对方拒绝了加密 Ping 请求。");
+                }
+                catch (InvalidDataException exception)
+                {
+                    return PingOutcome.Failed("加密 Ping 的响应无效：" + exception.GetType().Name + "。");
+                }
+                return PingOutcome.Answered(stopwatch.Elapsed);
+            }
+        }
+
+        /// <summary>Authenticates a response against its request: operation, correlation and sender.</summary>
+        /// <param name="response">The opened response.</param>
+        /// <param name="request">The originating request.</param>
+        /// <param name="identity">The probe identity, which must not be the sender.</param>
+        /// <param name="expectedNodeId">The identity that must have answered, or null to accept any other identity.</param>
+        /// <exception cref="CryptographicException">The response does not belong to the request or comes from the wrong identity.</exception>
+        private static void VerifyResponse(Packet response, Packet request, DHTIdentity identity, string? expectedNodeId)
+        {
+            if (response.Kind != (request.Kind | 128) || !CryptographicOperations.FixedTimeEquals(response.RequestId.Span, request.RequestId.Span)
+                || response.Sender.NodeId == identity.NodeId || (expectedNodeId != null && response.Sender.NodeId != expectedNodeId))
+            {
+                throw new CryptographicException("Response sender, operation or correlation mismatch.");
+            }
+        }
+
+        /// <summary>Drops every request that reaches a probe, which serves nothing.</summary>
+        /// <param name="envelope">The received envelope.</param>
+        /// <param name="transport">The receiving transport.</param>
+        /// <param name="source">The observed source endpoint.</param>
+        /// <param name="cancellationToken">The handler lifetime.</param>
+        /// <returns>A faulted task, so the transport answers nothing.</returns>
+        private static Task<ReadOnlyMemory<byte>> RejectInbound(ReadOnlyMemory<byte> envelope, DHTTransport transport, IPEndPoint source,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromException<ReadOnlyMemory<byte>>(new IOException("The probe does not serve requests."));
+        }
+
+        /// <summary>Returns the wildcard listen address of an endpoint's address family.</summary>
+        /// <param name="endpoint">The remote endpoint.</param>
+        /// <returns>The IPv4 or IPv6 wildcard address.</returns>
+        private static IPAddress WildcardFor(IPEndPoint endpoint)
+        {
+            return endpoint.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any;
+        }
+
+        /// <summary>The authenticated answer to a Hello request.</summary>
+        /// <param name="Peer">The answering contact.</param>
+        /// <param name="RoundTrip">The time between sending the request and receiving the answer.</param>
+        /// <param name="ObservedEndpoint">The endpoint the responder observed for the probe.</param>
+        private sealed record HelloOutcome(DHTPeer Peer, TimeSpan RoundTrip, IPEndPoint ObservedEndpoint);
+
+        /// <summary>The outcome of an encrypted Ping request.</summary>
+        /// <param name="Succeeded">Whether the node answered with a success status.</param>
+        /// <param name="RoundTrip">The round trip of an answered request.</param>
+        /// <param name="Error">The failure description, or null.</param>
+        private readonly record struct PingOutcome(bool Succeeded, TimeSpan? RoundTrip, string? Error)
+        {
+            /// <summary>Gets the outcome of a Ping that was never sent.</summary>
+            internal static PingOutcome NotAttempted => new PingOutcome(false, null, null);
+
+            /// <summary>Creates a successful outcome.</summary>
+            /// <param name="roundTrip">The measured round trip.</param>
+            /// <returns>The outcome.</returns>
+            internal static PingOutcome Answered(TimeSpan roundTrip)
+            {
+                return new PingOutcome(true, roundTrip, null);
             }
 
-            /// <summary>A consistent copy of the captured values.</summary>
-            /// <param name="Peer">The answering contact, when retained.</param>
-            /// <param name="NodeId">The answering node's identifier.</param>
-            /// <param name="HelloAt">When the Hello answer was authenticated.</param>
-            /// <param name="PeerRemoved">Whether the follow-up request failed.</param>
-            internal readonly record struct Result(DHTPeer? Peer, string? NodeId, TimeSpan? HelloAt, bool PeerRemoved);
+            /// <summary>Creates a failed outcome.</summary>
+            /// <param name="error">The failure description.</param>
+            /// <returns>The outcome.</returns>
+            internal static PingOutcome Failed(string error)
+            {
+                return new PingOutcome(false, null, error);
+            }
         }
     }
 }

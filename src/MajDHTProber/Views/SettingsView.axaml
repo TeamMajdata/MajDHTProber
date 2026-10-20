@@ -153,6 +153,7 @@
                                 <SelectableTextBlock Classes="mono value" FontSize="12" Text="{Binding PrimaryNodeIdText}" />
                             </Border>
                             <ToggleSwitch IsChecked="{Binding PersistIdentity}" OnContent="保存身份种子，重启后节点 ID 不变" OffContent="每次运行使用临时身份" />
+                            <ToggleSwitch IsChecked="{Binding PersistRoutingTable}" OnContent="停止时保存路由表，启动后重新联系已保存的节点" OffContent="不保存路由表，每次启动只经引导端点加入" />
                             <Button Classes="danger" Command="{Binding ResetIdentityCommand}" IsEnabled="{Binding CanResetIdentity}"
                                     ToolTip.Tip="需先停止主节点">
                                 <StackPanel Orientation="Horizontal" Spacing="7">

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using MajDHTNetwork;
@@ -18,7 +19,8 @@ namespace MajDHTProber.Services
 {
     /// <summary>
     /// Hosts one <see cref="MajDHTNode"/> for the prober: owns its lifecycle, tracks the peers it learns about, remembers
-    /// the records it handled and wraps every public node operation with logging and peer bookkeeping.
+    /// the records it handled, saves and restores its routing table and wraps every public node operation with logging
+    /// and peer bookkeeping.
     /// </summary>
     /// <remarks>
     /// A library node can only be started once, so every start creates a fresh node with the session's current settings;
@@ -30,6 +32,8 @@ namespace MajDHTProber.Services
         private readonly IdentityVault _vault;
         /// <summary>The endpoint prober.</summary>
         private readonly EndpointProber _prober;
+        /// <summary>The store of saved routing tables.</summary>
+        private readonly RoutingSnapshotStore _routing;
         /// <summary>The session diagnostics logger.</summary>
         private readonly ILogger _logger;
         /// <summary>The logger handed to the library node.</summary>
@@ -54,17 +58,20 @@ namespace MajDHTProber.Services
         private string? _lastError;
         /// <summary>When the current node started.</summary>
         private DateTimeOffset? _startedAt;
+        /// <summary>The latest restoration of the saved routing table, which concurrent callers join instead of repeating.</summary>
+        private Task<int>? _restoration;
 
         /// <summary>Creates a stopped session.</summary>
         /// <param name="label">The user-facing session name, also used as log category.</param>
-        /// <param name="identityName">The name of the session's identity in the vault.</param>
+        /// <param name="identityName">The name of the session's identity in the vault and of its saved routing table.</param>
         /// <param name="role">The session role.</param>
         /// <param name="settings">The settings used by the first start; the session keeps a copy.</param>
         /// <param name="vault">The identity vault.</param>
         /// <param name="prober">The endpoint prober.</param>
+        /// <param name="routing">The store of saved routing tables.</param>
         /// <param name="sink">The log sink.</param>
         public NodeSession(string label, string identityName, NodeSessionRole role, ProberSettings settings, IdentityVault vault,
-            EndpointProber prober, LogSink sink)
+            EndpointProber prober, RoutingSnapshotStore routing, LogSink sink)
         {
             Label = label;
             IdentityName = identityName;
@@ -72,6 +79,7 @@ namespace MajDHTProber.Services
             _settings = settings.Clone();
             _vault = vault;
             _prober = prober;
+            _routing = routing;
             _logger = sink.CreateLogger(label);
             _nodeLogger = sink.CreateLogger(label + " · 协议库");
         }
@@ -194,7 +202,10 @@ namespace MajDHTProber.Services
             }
         }
 
-        /// <summary>Starts a fresh node with the current settings, generating the identity first when needed.</summary>
+        /// <summary>
+        /// Starts a fresh node with the current settings, generating the identity first when needed. When the settings ask
+        /// for a persistent routing table, the saved table is restored in the background once the node runs.
+        /// </summary>
         /// <param name="cancellationToken">Cancels identity generation; the started node then runs until stopped.</param>
         /// <returns>Completion once listeners are bound.</returns>
         /// <exception cref="SettingsValidationException">The settings are invalid.</exception>
@@ -238,6 +249,10 @@ namespace MajDHTProber.Services
                 SetState(NodeSessionState.Running, null);
                 _logger.LogInformation("节点已启动：{NodeId}，监听 {Listen}，TCP {Tcp} / UDP {Udp}。", identity.NodeId, settings.ListenAddresses,
                     settings.TcpEnabled ? settings.TcpPort.ToString() : "关闭", settings.UdpEnabled ? settings.UdpPort.ToString() : "关闭");
+                if (settings.PersistRoutingTable && _routing.IsPersistent)
+                {
+                    BeginRestoration();
+                }
             }
             catch (Exception exception)
             {
@@ -252,7 +267,7 @@ namespace MajDHTProber.Services
             }
         }
 
-        /// <summary>Stops and drains the running node; does nothing when stopped.</summary>
+        /// <summary>Saves the routing table when the settings ask for it, then stops and drains the running node; does nothing when stopped.</summary>
         /// <returns>Completion after shutdown.</returns>
         public async Task StopAsync()
         {
@@ -275,6 +290,10 @@ namespace MajDHTProber.Services
                     return;
                 }
                 SetState(NodeSessionState.Stopping, null);
+                if (Settings.PersistRoutingTable && _routing.IsPersistent)
+                {
+                    SaveRoutingTable(node, table);
+                }
                 table.Observed -= OnObserved;
                 table.Removed -= OnRemoved;
                 await node.DisposeAsync().ConfigureAwait(false);
@@ -382,6 +401,33 @@ namespace MajDHTProber.Services
             return joined;
         }
 
+        /// <summary>
+        /// Re-contacts the nodes of this session's saved routing table and admits those that still answer under their saved
+        /// identity, then discovers the current neighbors. A restoration already running, such as the one started in the
+        /// background by <see cref="StartAsync"/>, is joined instead of repeated.
+        /// </summary>
+        /// <param name="cancellationToken">Cancels waiting for the restoration.</param>
+        /// <returns>The number of saved nodes that answered and were admitted; zero when nothing is saved or the saved table is invalid.</returns>
+        /// <exception cref="InvalidOperationException">The node is not running.</exception>
+        /// <exception cref="OperationCanceledException">The restoration was cancelled or the node stopped.</exception>
+        public Task<int> RestoreRoutingTableAsync(CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                if (_restoration != null && !_restoration.IsCompleted)
+                {
+                    return _restoration.WaitAsync(cancellationToken);
+                }
+            }
+            var node = RequireNode();
+            var restoration = RestoreRoutingTableCoreAsync(node, cancellationToken);
+            lock (_gate)
+            {
+                _restoration = restoration;
+            }
+            return restoration;
+        }
+
         /// <summary>Runs an iterative lookup for a routing identifier and records the responsive nodes.</summary>
         /// <param name="routingId">The lowercase SHA-256 target identifier.</param>
         /// <param name="cancellationToken">Cancels the lookup.</param>
@@ -407,86 +453,111 @@ namespace MajDHTProber.Services
         }
 
         /// <summary>
-        /// Adds a node by endpoint: probes it, records it, offers it to the routing table as a verified contact and
-        /// optionally joins through it and registers with it as a relay.
+        /// Adds a node by endpoint through the hosted node's own signed Hello exchange: the node that answers is admitted to
+        /// the routing table, registered as relay when it offers relay assistance and NAT traversal is enabled, and used
+        /// for a neighbor lookup, exactly like a bootstrap endpoint.
         /// </summary>
         /// <param name="endpoint">The node's endpoint.</param>
         /// <param name="options">The add options.</param>
         /// <param name="cancellationToken">Cancels the operation.</param>
-        /// <returns>The outcome; an unreachable endpoint is reported in the result.</returns>
+        /// <returns>The outcome; an endpoint that does not answer or is this node itself is reported in the result.</returns>
         /// <exception cref="InvalidOperationException">The node is not running.</exception>
         /// <exception cref="OperationCanceledException">The operation was cancelled.</exception>
         public async Task<AddPeerResult> AddPeerAsync(IPEndPoint endpoint, AddPeerOptions options, CancellationToken cancellationToken = default)
         {
-            var self = RequireNode();
+            var node = RequireNode();
             var target = EndpointParser.Format(endpoint);
-            _logger.LogInformation("手动添加节点：正在探测 {Endpoint}。", target);
-            var probe = await _prober.ProbeAsync(endpoint, options.Transport, ProbeOptions.From(Settings), cancellationToken).ConfigureAwait(false);
-            if (!probe.Succeeded)
-            {
-                return new AddPeerResult { Probe = probe, Note = probe.Error };
-            }
-            if (probe.NodeId == self.NodeId)
+            if (IsOwnEndpoint(endpoint))
             {
                 _logger.LogWarning("手动添加节点：{Endpoint} 是本节点自己。", target);
-                return new AddPeerResult { Probe = probe, Note = "该端点是本节点自己。" };
+                return new AddPeerResult { Endpoint = endpoint, Elapsed = TimeSpan.Zero, Note = "该端点是本节点自己。" };
             }
-            if (probe.Peer == null)
+            var transport = options.Transport ?? Settings.PreferredTransport;
+            _logger.LogInformation("手动添加节点：正在向 {Endpoint} 发送 Hello（优先 {Transport}）。", target, Display.Transport(transport));
+            var stopwatch = Stopwatch.StartNew();
+            DHTPeer peer;
+            try
             {
-                _logger.LogWarning("手动添加节点：{Endpoint} 上的节点为私有节点，无法加入路由表。", target);
-                return new AddPeerResult { Probe = probe, Note = "该节点声明自己为私有节点，只能经中继访问，无法加入路由表。" };
+                peer = await node.AddPeerAsync(endpoint, transport, cancellationToken).ConfigureAwait(false);
             }
-            var table = RoutingTable ?? throw new InvalidOperationException("节点未运行。");
-            var admitted = table.Inject(probe.Peer, endpoint.Address);
-            Peers.Observe(probe.Peer, PeerSource.Manual, admitted, endpoint.Address, interaction: true);
-            Peers.RecordProbe(probe.Peer.NodeId, PeerProbeRecord.From(probe, DateTimeOffset.UtcNow));
-            _logger.LogInformation("手动添加节点：{NodeId}（{Endpoint}）{Admission}。", Display.ShortId(probe.Peer.NodeId), target,
-                admitted ? "已加入路由表" : "未被路由表接纳（桶已满、网段限额或联系人已过期）");
-            int? neighbors = null;
-            if (options.Join)
+            catch (Exception exception) when (exception is IOException or ArgumentException)
             {
-                neighbors = (await FindNodesAsync(self.NodeId, cancellationToken).ConfigureAwait(false)).Count;
+                var failure = DescribeAddFailure(exception);
+                _logger.LogWarning(exception, "手动添加节点：{Endpoint} 失败，耗时 {Elapsed}。{Note}", target, Display.Duration(stopwatch.Elapsed), failure);
+                return new AddPeerResult { Endpoint = endpoint, Elapsed = stopwatch.Elapsed, Note = failure };
             }
-            bool? relayRegistered = null;
-            string? note = admitted ? null : "路由表未接纳该节点（桶已满、网段限额或联系人已过期），但它仍会出现在节点列表中。";
-            if (options.RegisterRelay)
+            stopwatch.Stop();
+            var admitted = RecordContactedPeer(peer, endpoint.Address, PeerSource.Manual);
+            var routingTableSize = RoutingTable?.Snapshot().Count ?? 0;
+            string? note = null;
+            if (peer.Reachability == DHTReachability.Private)
             {
-                if ((probe.Peer.Capabilities & DHTCapabilities.Relay) == 0)
-                {
-                    note = AppendNote(note, "该节点未声明中继能力，已跳过中继注册。");
-                }
-                else if (!Settings.EnableNatTraversal)
-                {
-                    note = AppendNote(note, "本节点未启用 NAT 穿透，已跳过中继注册。");
-                }
-                else
-                {
-                    try
-                    {
-                        await RegisterRelayAsync(probe.Peer, cancellationToken).ConfigureAwait(false);
-                        relayRegistered = true;
-                    }
-                    catch (Exception exception) when (exception is not OperationCanceledException)
-                    {
-                        relayRegistered = false;
-                        note = AppendNote(note, "中继注册失败：" + Display.Error(exception));
-                    }
-                }
+                note = "该节点声明自己为私有节点，只能经中继访问，无法加入路由表，但它仍会出现在节点列表中。";
             }
+            else if (!admitted)
+            {
+                note = "路由表未接纳该节点（桶已满、网段限额或联系人已过期），但它仍会出现在节点列表中。";
+            }
+            if ((peer.Capabilities & DHTCapabilities.Relay) != 0 && !Settings.EnableNatTraversal)
+            {
+                note = AppendNote(note, "该节点具备中继能力，但本节点未启用 NAT 穿透，未注册中继。");
+            }
+            _logger.LogInformation("手动添加节点：{NodeId}（{Endpoint}）{Admission}，邻居查找后路由表共 {Count} 个节点，耗时 {Elapsed}。",
+                Display.ShortId(peer.NodeId), target, admitted ? "已加入路由表" : "未被路由表接纳", routingTableSize, Display.Duration(stopwatch.Elapsed));
             return new AddPeerResult
             {
-                Probe = probe,
-                Added = true,
+                Endpoint = endpoint,
+                Elapsed = stopwatch.Elapsed,
+                Peer = peer,
                 AdmittedToRoutingTable = admitted,
-                NeighborsFound = neighbors,
-                RelayRegistered = relayRegistered,
+                RoutingTableSize = routingTableSize,
                 Note = note,
             };
         }
 
+        /// <summary>
+        /// Connects this node with another node hosted by this process the way a user-added node is connected: a signed
+        /// Hello over loopback, admission to the routing table and a neighbor lookup, so the two nodes verify each other
+        /// through the real protocol.
+        /// </summary>
+        /// <param name="other">The other session, which must be running.</param>
+        /// <param name="cancellationToken">Cancels the exchange.</param>
+        /// <returns>Whether the other node answered and is a routing table entry afterwards; failures are logged.</returns>
+        public async Task<bool> ConnectLocalPeerAsync(NodeSession other, CancellationToken cancellationToken = default)
+        {
+            var node = TryGetNode();
+            var endpoints = other.GetContactEndpoints();
+            var expected = other.NodeId;
+            if (node == null || endpoints.Count == 0 || expected == null || expected == NodeId)
+            {
+                return false;
+            }
+            var endpoint = endpoints[0];
+            try
+            {
+                var peer = await node.AddPeerAsync(endpoint, null, cancellationToken).ConfigureAwait(false);
+                var admitted = RecordContactedPeer(peer, endpoint.Address, PeerSource.LocalNode);
+                if (peer.NodeId == expected)
+                {
+                    Peers.SetLabel(peer.NodeId, other.Label);
+                }
+                else
+                {
+                    _logger.LogWarning("端点 {Endpoint} 由 {Actual} 应答，而不是{Label}。", EndpointParser.Format(endpoint), Display.ShortId(peer.NodeId), other.Label);
+                }
+                _logger.LogInformation("已连接{Label}（{NodeId}），{Admission}。", other.Label, Display.ShortId(peer.NodeId), admitted ? "已加入路由表" : "未被路由表接纳");
+                return admitted;
+            }
+            catch (Exception exception) when (exception is IOException or ArgumentException)
+            {
+                _logger.LogWarning(exception, "连接{Label}（{Endpoint}）失败。", other.Label, EndpointParser.Format(endpoint));
+                return false;
+            }
+        }
+
         /// <summary>Probes one endpoint with this session's protocol settings; the node does not need to be running.</summary>
         /// <param name="endpoint">The endpoint.</param>
-        /// <param name="transport">The transport tried first.</param>
+        /// <param name="transport">The probed transport.</param>
         /// <param name="options">Optional probe tuning; defaults to this session's settings.</param>
         /// <param name="cancellationToken">Cancels the probe.</param>
         /// <returns>The probe outcome.</returns>
@@ -532,7 +603,7 @@ namespace MajDHTProber.Services
             EndpointProbeResult? best = null;
             foreach (var result in results)
             {
-                if (result.Succeeded && result.NodeId == peer.NodeId && (best == null || (!best.RpcSucceeded && result.RpcSucceeded)))
+                if (result.Succeeded && result.NodeId == peer.NodeId && (best == null || (!best.PingSucceeded && result.PingSucceeded)))
                 {
                     best = result;
                 }
@@ -833,24 +904,6 @@ namespace MajDHTProber.Services
             return forgotten;
         }
 
-        /// <summary>Introduces another node hosted by this process as a verified contact.</summary>
-        /// <param name="other">The other session.</param>
-        /// <returns>Whether the routing table accepted the contact.</returns>
-        public bool IntroduceLocalPeer(NodeSession other)
-        {
-            var table = RoutingTable;
-            var peer = other.TryGetLocalPeer();
-            if (table == null || peer == null || peer.NodeId == NodeId)
-            {
-                return false;
-            }
-            var address = peer.Endpoints.Count != 0 ? peer.Endpoints[0].Address : null;
-            var admitted = address != null && table.Inject(peer, address);
-            Peers.Observe(peer, PeerSource.LocalNode, admitted, admitted ? address : null);
-            Peers.SetLabel(peer.NodeId, other.Label);
-            return admitted;
-        }
-
         /// <summary>Aligns the peer list's routing table flags with the running node's table.</summary>
         public void RefreshRoutingState()
         {
@@ -884,6 +937,137 @@ namespace MajDHTProber.Services
         private static string AppendNote(string? note, string sentence)
         {
             return string.IsNullOrEmpty(note) ? sentence : note + " " + sentence;
+        }
+
+        /// <summary>Explains why the library could not add a node at an endpoint.</summary>
+        /// <param name="exception">The failure reported by the library.</param>
+        /// <returns>A user-facing explanation.</returns>
+        private static string DescribeAddFailure(Exception exception)
+        {
+            if (exception is ArgumentException)
+            {
+                return "端点无效：需要单播地址和非零端口。";
+            }
+            if (exception.InnerException is CryptographicException)
+            {
+                return "端点有应答，但响应未通过身份校验（可能是本节点自己、身份工作量不足或响应被篡改）。";
+            }
+            return "端点未响应 Hello 请求（TCP 与 UDP 均超时或被拒绝）。";
+        }
+
+        /// <summary>Checks whether an endpoint is one at which this node can be contacted.</summary>
+        /// <param name="endpoint">The endpoint.</param>
+        /// <returns>Whether the endpoint belongs to this node.</returns>
+        private bool IsOwnEndpoint(IPEndPoint endpoint)
+        {
+            foreach (var transport in new[] { DHTTransport.Tcp, DHTTransport.Udp })
+            {
+                foreach (var own in GetContactEndpoints(transport))
+                {
+                    if (own.Equals(endpoint))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>Records a contact the hosted node just authenticated at an address and aligns the routing flags.</summary>
+        /// <param name="peer">The authenticated contact.</param>
+        /// <param name="address">The address at which it answered.</param>
+        /// <param name="source">How the contact was learned.</param>
+        /// <returns>Whether the contact is a routing table entry.</returns>
+        private bool RecordContactedPeer(DHTPeer peer, IPAddress address, PeerSource source)
+        {
+            var table = RoutingTable;
+            var admitted = table != null && table.Contains(peer.NodeId);
+            Peers.Observe(peer, source, admitted, address, interaction: true);
+            RefreshRoutingState();
+            return admitted;
+        }
+
+        /// <summary>Starts restoring the saved routing table without delaying the start; the outcome is logged.</summary>
+        private void BeginRestoration()
+        {
+            Task<int> restoration;
+            try
+            {
+                restoration = RestoreRoutingTableAsync(CancellationToken.None);
+            }
+            catch (InvalidOperationException)
+            {
+                return;
+            }
+            _ = restoration.ContinueWith(task => _logger.LogDebug(task.Exception, "后台恢复路由表未完成。"), CancellationToken.None,
+                TaskContinuationOptions.NotOnRanToCompletion, TaskScheduler.Default);
+        }
+
+        /// <summary>Loads the saved routing table and restores it into the running node.</summary>
+        /// <param name="node">The running node.</param>
+        /// <param name="cancellationToken">Cancels the restoration.</param>
+        /// <returns>The number of saved nodes that answered and were admitted.</returns>
+        /// <exception cref="OperationCanceledException">The restoration was cancelled or the node stopped.</exception>
+        private async Task<int> RestoreRoutingTableCoreAsync(MajDHTNode node, CancellationToken cancellationToken)
+        {
+            var snapshot = _routing.TryLoad(IdentityName);
+            if (snapshot == null)
+            {
+                _logger.LogDebug("没有已保存的路由表可恢复。");
+                return 0;
+            }
+            var stopwatch = Stopwatch.StartNew();
+            _logger.LogInformation("正在恢复已保存的路由表（{Bytes}）。", Display.Bytes(snapshot.Length));
+            int restored;
+            try
+            {
+                restored = await node.RestoreRoutingTableAsync(snapshot, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidDataException exception)
+            {
+                _logger.LogWarning(exception, "已保存的路由表无效，已丢弃。");
+                TryDeleteRoutingSnapshot();
+                return 0;
+            }
+            RefreshRoutingState();
+            _logger.LogInformation("路由表恢复完成：{Count} 个已保存的节点应答并加入路由表，耗时 {Elapsed}。", restored, Display.Duration(stopwatch.Elapsed));
+            return restored;
+        }
+
+        /// <summary>Saves the routing table of a node that is about to stop, keeping the previous file when the table is empty.</summary>
+        /// <param name="node">The running node.</param>
+        /// <param name="table">The node's routing table.</param>
+        private void SaveRoutingTable(MajDHTNode node, TrackingRoutingTable table)
+        {
+            var count = table.Snapshot().Count;
+            if (count == 0)
+            {
+                _logger.LogDebug("路由表为空，保留上次保存的路由表。");
+                return;
+            }
+            try
+            {
+                var snapshot = node.ExportRoutingTable();
+                _routing.Save(IdentityName, snapshot);
+                _logger.LogInformation("已保存路由表：{Count} 个节点，{Bytes}。", count, Display.Bytes(snapshot.Length));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(exception, "路由表无法保存。");
+            }
+        }
+
+        /// <summary>Deletes the saved routing table, logging rather than failing when the file cannot be deleted.</summary>
+        private void TryDeleteRoutingSnapshot()
+        {
+            try
+            {
+                _routing.Delete(IdentityName);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(exception, "无效的路由表文件无法删除。");
+            }
         }
 
         /// <summary>Runs one node operation with timing and logging.</summary>
@@ -957,10 +1141,9 @@ namespace MajDHTProber.Services
         /// <param name="observation">The observation.</param>
         private void OnObserved(object? sender, RoutingObservation observation)
         {
-            if (observation.Injected || IsProbeClient(observation.Peer.NodeId))
+            if (IsProbeClient(observation.Peer.NodeId))
             {
-                // Injections are recorded by the code that injects, with the matching source; the prober's own short-lived
-                // probe clients contact hosted nodes too, but they are not members of the probed network.
+                // The prober's own probes and short-lived clients contact hosted nodes too, but they are not members of the probed network.
                 return;
             }
             Peers.Observe(observation.Peer, PeerSource.Routing, observation.InTable, observation.VerifiedAddress, interaction: true);
@@ -970,7 +1153,7 @@ namespace MajDHTProber.Services
             }
         }
 
-        /// <summary>Checks whether a node is one of the prober's short-lived probe clients.</summary>
+        /// <summary>Checks whether a node is one of the prober's probes or short-lived clients.</summary>
         /// <param name="nodeId">The node identifier.</param>
         /// <returns>Whether the node uses the shared probe identity.</returns>
         private bool IsProbeClient(string nodeId)
