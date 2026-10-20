@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajDHTProber.ViewModels"
+             xmlns:c="using:MajDHTProber.Controls"
+             x:Class="MajDHTProber.Views.BannerView"
+             x:DataType="vm:BannerViewModel">
+    <Border Classes="banner" IsVisible="{Binding IsVisible}"
+            Classes.success="{Binding IsSuccess}" Classes.info="{Binding IsInfo}"
+            Classes.warning="{Binding IsWarning}" Classes.danger="{Binding IsDanger}">
+        <Grid ColumnDefinitions="Auto,*">
+            <Panel Margin="0,0,10,0" VerticalAlignment="Top">
+                <c:LineIcon Classes="small" Data="{StaticResource Icon.Check}" IsVisible="{Binding IsSuccess}" />
+                <c:LineIcon Classes="small" Data="{StaticResource Icon.Warning}" IsVisible="{Binding IsWarning}" />
+                <c:LineIcon Classes="small" Data="{StaticResource Icon.Close}" IsVisible="{Binding IsDanger}" />
+                <c:LineIcon Classes="small" Data="{StaticResource Icon.Info}" IsVisible="{Binding IsInfo}" />
+                <c:LineIcon Classes="small" Data="{StaticResource Icon.Info}" IsVisible="{Binding IsNeutral}" />
+            </Panel>
+            <TextBlock Grid.Column="1" Text="{Binding Text}" />
+        </Grid>
+    </Border>
+</UserControl>

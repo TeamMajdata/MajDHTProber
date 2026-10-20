@@ -1,0 +1,469 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajDHTProber.ViewModels"
+             xmlns:tools="using:MajDHTProber.ViewModels.Tools"
+             xmlns:c="using:MajDHTProber.Controls"
+             x:Class="MajDHTProber.Views.ToolsView"
+             x:DataType="vm:ToolsViewModel">
+    <Border Classes="card" Padding="18,8,18,18" Margin="0,0,0,16">
+        <TabControl Classes="tools" SelectedIndex="{Binding SelectedTabIndex}">
+            <!-- Endpoint probe -->
+            <TabItem Header="端点探测">
+                <ContentControl Content="{Binding Ping}" Margin="0,12,0,0">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate x:DataType="tools:PingToolViewModel">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="12">
+                                <TextBlock Classes="caption"
+                                           Text="类似 ping：每一轮都由独立的探针节点向端点发起签名 Hello，再向应答节点的通告端点发送一次加密查找请求，分别计时。探针不通告端点，不会进入对方路由表。" />
+                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                                    <StackPanel>
+                                        <TextBlock Classes="label" Text="端点" />
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <TextBox Classes="mono" Text="{Binding EndpointText}" PlaceholderText="IP:端口 / [IPv6]:端口 / 主机名:端口" />
+                                            <Button Grid.Column="1" Classes="iconbutton" Command="{Binding UseActiveEndpointCommand}" ToolTip.Tip="填入当前节点自己的端点（自测）">
+                                                <c:LineIcon Data="{StaticResource Icon.Server}" />
+                                            </Button>
+                                        </Grid>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Classes="label" Text="传输" />
+                                        <ComboBox ItemsSource="{Binding TransportOptions}" SelectedIndex="{Binding TransportIndex}" Width="140" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Classes="label" Text="次数" />
+                                        <NumericUpDown Value="{Binding Count}" Minimum="1" Maximum="100" FormatString="0" Width="110" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="3">
+                                        <TextBlock Classes="label" Text="间隔 (ms)" />
+                                        <NumericUpDown Value="{Binding IntervalMilliseconds}" Minimum="0" Maximum="60000" Increment="100" FormatString="0" Width="120" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="4">
+                                        <TextBlock Classes="label" Text="超时 (s)" />
+                                        <NumericUpDown Value="{Binding TimeoutSeconds}" Minimum="0.1" Maximum="60" Increment="0.5" FormatString="0.##" Width="110" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom">
+                                        <Button Classes="accent" Command="{Binding StartCommand}">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <c:LineIcon Data="{StaticResource Icon.Radar}" />
+                                                <TextBlock Text="开始探测" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Content="停止" Command="{Binding StartCancelCommand}" IsVisible="{Binding StartCommand.IsRunning}" />
+                                    </StackPanel>
+                                </Grid>
+                                <UniformGrid Grid.Row="2" Columns="4" ColumnSpacing="12">
+                                    <Border Classes="subtle" Padding="12,10">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Classes="label" Text="发送 / 应答" />
+                                            <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">
+                                                <Run Text="{Binding Sent}" /><Run Text=" / " /><Run Text="{Binding Answered}" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Classes="subtle" Padding="12,10">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Classes="label" Text="丢失率" />
+                                            <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding LossText}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Classes="subtle" Padding="12,10">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Classes="label" Text="Hello 最小 / 平均 / 最大" />
+                                            <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding RoundTripText}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Classes="subtle" Padding="12,10">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Classes="label" Text="应答节点" />
+                                                <TextBlock Classes="mono" FontSize="13" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding NodesText}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Classes="iconbutton" Command="{Binding AddToPeersCommand}" ToolTip.Tip="添加到当前节点的节点列表">
+                                                <c:LineIcon Data="{StaticResource Icon.Plus}" />
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                </UniformGrid>
+                                <ContentControl Grid.Row="3" Content="{Binding Result}" />
+                                <Grid Grid.Row="4" RowDefinitions="Auto,*">
+                                    <Border Classes="tablehead">
+                                        <Grid ColumnDefinitions="0.4*,0.9*,1.4*,0.5*,0.8*,0.8*,1*,2*">
+                                            <TextBlock Classes="head" Text="#" />
+                                            <TextBlock Grid.Column="1" Classes="head" Text="时间" />
+                                            <TextBlock Grid.Column="2" Classes="head" Text="端点" />
+                                            <TextBlock Grid.Column="3" Classes="head" Text="传输" />
+                                            <TextBlock Grid.Column="4" Classes="head" Text="Hello" />
+                                            <TextBlock Grid.Column="5" Classes="head" Text="加密请求" />
+                                            <TextBlock Grid.Column="6" Classes="head" Text="节点" />
+                                            <TextBlock Grid.Column="7" Classes="head" Text="结果" />
+                                        </Grid>
+                                    </Border>
+                                    <ListBox Grid.Row="1" Classes="rows static" ItemsSource="{Binding Rows}" MinHeight="160">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ProbeRowViewModel">
+                                                <Grid ColumnDefinitions="0.4*,0.9*,1.4*,0.5*,0.8*,0.8*,1*,2*">
+                                                    <TextBlock Classes="cell mono" Text="{Binding SequenceText}" />
+                                                    <TextBlock Grid.Column="1" Classes="cell mono" Text="{Binding TimeText}" />
+                                                    <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding EndpointText}" />
+                                                    <TextBlock Grid.Column="3" Classes="cell" Text="{Binding TransportText}" />
+                                                    <TextBlock Grid.Column="4" Classes="cell mono" Text="{Binding HelloText}" />
+                                                    <TextBlock Grid.Column="5" Classes="cell mono" Text="{Binding RpcText}" />
+                                                    <TextBlock Grid.Column="6" Classes="cell mono" Text="{Binding NodeText}" />
+                                                    <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="7">
+                                                        <Ellipse Classes="dot" Classes.success="{Binding IsSuccess}" Classes.warning="{Binding IsWarning}"
+                                                                 Classes.danger="{Binding IsDanger}" />
+                                                        <TextBlock Classes="cell" Text="{Binding OutcomeText}" ToolTip.Tip="{Binding OutcomeText}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <TextBlock Grid.Row="1" Classes="caption" HorizontalAlignment="Center" Margin="0,32,0,0" IsVisible="{Binding !Rows.Count}"
+                                               Text="输入端点后点击“开始探测”；可点击端点框右侧的按钮填入当前节点自己的端点做自测。" />
+                                </Grid>
+                            </Grid>
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
+            </TabItem>
+
+            <!-- Lookup -->
+            <TabItem Header="路由查找">
+                <ContentControl Content="{Binding Lookup}" Margin="0,12,0,0">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate x:DataType="tools:LookupToolViewModel">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="12">
+                                <TextBlock Classes="caption"
+                                           Text="以 XOR 距离进行迭代查找（多条不相交路径），返回目标附近最近的可响应节点。目标可以是节点 ID、路由 ID，或“发布者ID:名称”格式的键（按其路由 ID 查找）。" />
+                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBox Classes="mono" Text="{Binding TargetText}" PlaceholderText="64 位十六进制 ID，或 发布者ID:名称" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                        <Button Content="随机 ID" Command="{Binding RandomizeCommand}" />
+                                        <Button Content="本节点 ID" Command="{Binding UseSelfCommand}" />
+                                        <Button Classes="accent" Command="{Binding LookupCommand}">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <c:LineIcon Data="{StaticResource Icon.Globe}" />
+                                                <TextBlock Text="查找" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Content="取消" Command="{Binding LookupCancelCommand}" IsVisible="{Binding LookupCommand.IsRunning}" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Grid.Row="2" Classes="caption mono" Text="{Binding RoutingIdText, StringFormat='路由 ID：{0}'}"
+                                           IsVisible="{Binding RoutingIdText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                <ContentControl Grid.Row="3" Content="{Binding Result}" />
+                                <Grid Grid.Row="4" RowDefinitions="Auto,*">
+                                    <Border Classes="tablehead">
+                                        <Grid ColumnDefinitions="0.4*,1.6*,0.8*,1.8*,1.1*,1*">
+                                            <TextBlock Classes="head" Text="#" />
+                                            <TextBlock Grid.Column="1" Classes="head" Text="节点" />
+                                            <TextBlock Grid.Column="2" Classes="head" Text="公共前缀" />
+                                            <TextBlock Grid.Column="3" Classes="head" Text="地址" />
+                                            <TextBlock Grid.Column="4" Classes="head" Text="能力" />
+                                            <TextBlock Grid.Column="5" Classes="head" Text="可达性" />
+                                        </Grid>
+                                    </Border>
+                                    <ListBox Grid.Row="1" Classes="rows static" ItemsSource="{Binding Rows}" MinHeight="160">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="tools:LookupRowViewModel">
+                                                <Grid ColumnDefinitions="0.4*,1.6*,0.8*,1.8*,1.1*,1*">
+                                                    <TextBlock Classes="cell mono" Text="{Binding RankText}" />
+                                                    <TextBlock Grid.Column="1" Classes="cell mono" Text="{Binding NodeText}" ToolTip.Tip="{Binding NodeId}" />
+                                                    <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding PrefixText}" />
+                                                    <TextBlock Grid.Column="3" Classes="cell mono" Text="{Binding AddressText}" />
+                                                    <TextBlock Grid.Column="4" Classes="cell" Text="{Binding CapabilitiesText}" />
+                                                    <TextBlock Grid.Column="5" Classes="cell" Text="{Binding ReachabilityText}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <TextBlock Grid.Row="1" Classes="caption" HorizontalAlignment="Center" Margin="0,32,0,0" IsVisible="{Binding !Rows.Count}"
+                                               Text="输入目标后点击“查找”，结果按与目标的 XOR 距离由近到远排列。" />
+                                </Grid>
+                            </Grid>
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
+            </TabItem>
+
+            <!-- Block read -->
+            <TabItem Header="块读取">
+                <ContentControl Content="{Binding Block}" Margin="0,12,0,0">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate x:DataType="tools:BlockToolViewModel">
+                            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Classes="caption"
+                                               Text="向指定提供者读取单个块（可指定中继），校验长度与 Merkle 位置后显示内容，用于定位单个提供者或中继路径的问题。" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <TextBox Classes="mono" Text="{Binding RecordText}" PlaceholderText="键或记录码" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button Classes="accent" Content="解析并查找提供者" Command="{Binding ResolveCommand}" />
+                                            <Button Content="取消" Command="{Binding ResolveCancelCommand}" IsVisible="{Binding ResolveCommand.IsRunning}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <Border Classes="subtle">
+                                        <TextBlock Classes="value" Text="{Binding RecordSummary}" />
+                                    </Border>
+                                    <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="8">
+                                        <StackPanel>
+                                            <TextBlock Classes="label" Text="提供者" />
+                                            <ComboBox ItemsSource="{Binding Providers}" SelectedItem="{Binding SelectedProvider}" HorizontalAlignment="Stretch"
+                                                      PlaceholderText="先解析记录">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:PeerChoiceViewModel">
+                                                        <TextBlock Classes="mono" Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Classes="label" Text="中继" />
+                                            <ComboBox ItemsSource="{Binding Relays}" SelectedItem="{Binding SelectedRelay}" HorizontalAlignment="Stretch">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:PeerChoiceViewModel">
+                                                        <TextBlock Classes="mono" Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Classes="label" Text="块序号" />
+                                            <NumericUpDown Value="{Binding BlockIndex}" Minimum="0" Maximum="{Binding MaxBlockIndex}" FormatString="0" Width="120" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom">
+                                            <Button Classes="accent" Command="{Binding ReadCommand}">
+                                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                                    <c:LineIcon Data="{StaticResource Icon.Block}" />
+                                                    <TextBlock Text="读取块" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Content="取消" Command="{Binding ReadCancelCommand}" IsVisible="{Binding ReadCommand.IsRunning}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <ContentControl Content="{Binding Result}" />
+                                    <TextBlock Classes="value mono" Text="{Binding BlockInfo}" IsVisible="{Binding BlockInfo, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                    <Border Classes="code" IsVisible="{Binding HexText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                        <SelectableTextBlock Classes="mono" FontSize="12" Text="{Binding HexText}" />
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
+            </TabItem>
+
+            <!-- NAT -->
+            <TabItem Header="中继 / 打洞">
+                <ContentControl Content="{Binding Nat}" Margin="0,12,0,0">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate x:DataType="tools:NatToolViewModel">
+                            <StackPanel Spacing="14" MaxWidth="900" HorizontalAlignment="Left">
+                                <Border Classes="banner info">
+                                    <TextBlock Text="{Binding TraversalText}" />
+                                </Border>
+                                <Border Classes="subtle" Padding="16,14">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Classes="h3" Text="注册中继" />
+                                        <TextBlock Classes="caption" Text="在中继登记本节点被观察到的 TCP/UDP 端点，并持续刷新租约、轮询引介；同时触发可达性检查（独立回拨）。" />
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                            <ComboBox ItemsSource="{Binding Relays}" SelectedItem="{Binding SelectedRelay}" HorizontalAlignment="Stretch"
+                                                      PlaceholderText="没有具备中继能力的已知节点">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:PeerChoiceViewModel">
+                                                        <TextBlock Classes="mono" Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <Button Grid.Column="1" Classes="iconbutton" Command="{Binding RefreshChoicesCommand}" ToolTip.Tip="刷新节点列表">
+                                                <c:LineIcon Data="{StaticResource Icon.Refresh}" />
+                                            </Button>
+                                            <Button Grid.Column="2" Classes="accent" Command="{Binding RegisterCommand}">
+                                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                                    <c:LineIcon Data="{StaticResource Icon.Relay}" />
+                                                    <TextBlock Text="注册" />
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="subtle" Padding="16,14">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Classes="h3" Text="经中继打洞" />
+                                        <TextBlock Classes="caption" Text="中继分发双方观察到的端点和一次性票据，双方从监听端口同时探测；成功后后续请求直接走该路由。" />
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                            <StackPanel>
+                                                <TextBlock Classes="label" Text="目标节点" />
+                                                <ComboBox ItemsSource="{Binding Targets}" SelectedItem="{Binding SelectedTarget}" HorizontalAlignment="Stretch">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:PeerChoiceViewModel">
+                                                            <TextBlock Classes="mono" Text="{Binding Label}" />
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Classes="label" Text="传输" />
+                                                <ComboBox ItemsSource="{Binding TransportOptions}" SelectedIndex="{Binding TransportIndex}" Width="140" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom">
+                                                <Button Classes="accent" Command="{Binding PunchCommand}">
+                                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                                        <c:LineIcon Data="{StaticResource Icon.Zap}" />
+                                                        <TextBlock Text="打洞" />
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Content="取消" Command="{Binding PunchCancelCommand}" IsVisible="{Binding PunchCommand.IsRunning}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+                                <ContentControl Content="{Binding Result}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
+            </TabItem>
+
+            <!-- Round trip -->
+            <TabItem Header="通信测试">
+                <ContentControl Content="{Binding RoundTrip}" Margin="0,12,0,0">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate x:DataType="tools:RoundTripToolViewModel">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="12">
+                                <TextBlock Classes="caption"
+                                           Text="端到端验证节点间通信：当前节点发布一段随机负载，另一个本地节点或经指定端点接入的临时客户端通过 DHT 解析键、从提供者下载并逐字节比对。" />
+                                <Grid Grid.Row="1" ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="8">
+                                    <StackPanel>
+                                        <TextBlock Classes="label" Text="下载方" />
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                            <ComboBox ItemsSource="{Binding Targets}" SelectedItem="{Binding SelectedTarget}" HorizontalAlignment="Stretch">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="tools:RoundTripTargetViewModel">
+                                                        <TextBlock Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <Button Grid.Column="1" Classes="iconbutton" Command="{Binding RefreshTargetsCommand}" ToolTip.Tip="刷新">
+                                                <c:LineIcon Data="{StaticResource Icon.Refresh}" />
+                                            </Button>
+                                        </Grid>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" IsVisible="{Binding UsesClient}">
+                                        <TextBlock Classes="label" Text="临时客户端接入端点" />
+                                        <TextBox Classes="mono" Text="{Binding ClientEndpointText}" PlaceholderText="IP:端口" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Classes="label" Text="负载 (KiB)" />
+                                        <NumericUpDown Value="{Binding PayloadKilobytes}" Minimum="1" Maximum="65536" Increment="64" FormatString="0" Width="130" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Bottom">
+                                        <Button Classes="accent" Command="{Binding StartTestCommand}">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <c:LineIcon Data="{StaticResource Icon.Send}" />
+                                                <TextBlock Text="开始测试" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Content="取消" Command="{Binding StartTestCancelCommand}" IsVisible="{Binding StartTestCommand.IsRunning}" />
+                                    </StackPanel>
+                                </Grid>
+                                <CheckBox Grid.Row="2" Content="测试结束后撤回测试记录（避免在网络中留下测试数据）" IsChecked="{Binding WithdrawAfterwards}" />
+                                <StackPanel Grid.Row="3" Spacing="8">
+                                    <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+                                    <ContentControl Content="{Binding Result}" />
+                                </StackPanel>
+                                <ItemsControl Grid.Row="4" ItemsSource="{Binding Stages}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="tools:StageRowViewModel">
+                                            <Border Classes="subtle" Margin="0,0,0,6" Padding="12,9">
+                                                <Grid ColumnDefinitions="Auto,160,100,*">
+                                                    <Ellipse Classes="dot" Classes.success="{Binding IsSuccess}" Classes.danger="{Binding IsDanger}" Margin="0,0,10,0" />
+                                                    <TextBlock Grid.Column="1" Classes="cell" FontWeight="SemiBold" Text="{Binding Name}" />
+                                                    <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding ElapsedText}" />
+                                                    <TextBlock Grid.Column="3" Classes="cell" Text="{Binding Detail}" ToolTip.Tip="{Binding Detail}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
+            </TabItem>
+
+            <!-- Statistics -->
+            <TabItem Header="传输统计">
+                <ContentControl Content="{Binding Statistics}" Margin="0,12,0,0">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate x:DataType="tools:StatisticsToolViewModel">
+                            <Grid ColumnDefinitions="3*,16,2*" RowDefinitions="Auto,Auto,*">
+                                <TextBlock Grid.ColumnSpan="3" Classes="caption"
+                                           Text="当前节点生命周期内，按节点与路由（端点 + 传输）统计的请求发送数与超时未应答数；每次 UDP 重传与 TCP 尝试都会计入，经中继转发的请求计入中继。" />
+                                <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Classes="h3" Margin="0,10" Text="{Binding TotalsText}" />
+                                <Grid Grid.Row="2" RowDefinitions="Auto,*">
+                                    <Border Classes="tablehead">
+                                        <Grid ColumnDefinitions="2*,0.8*,0.8*,0.8*,0.6*,1*">
+                                            <TextBlock Classes="head" Text="节点" />
+                                            <TextBlock Grid.Column="1" Classes="head" Text="发送" />
+                                            <TextBlock Grid.Column="2" Classes="head" Text="丢失" />
+                                            <TextBlock Grid.Column="3" Classes="head" Text="丢包率" />
+                                            <TextBlock Grid.Column="4" Classes="head" Text="路由" />
+                                            <TextBlock Grid.Column="5" Classes="head" Text="更新" />
+                                        </Grid>
+                                    </Border>
+                                    <ListBox Grid.Row="1" Classes="rows" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="tools:PeerStatRowViewModel">
+                                                <Grid ColumnDefinitions="2*,0.8*,0.8*,0.8*,0.6*,1*">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Ellipse Classes="dot" Classes.success="{Binding IsSuccess}" Classes.warning="{Binding IsWarning}"
+                                                                 Classes.danger="{Binding IsDanger}" />
+                                                        <TextBlock Classes="cell mono" Text="{Binding NodeText}" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Classes="cell mono" Text="{Binding SentText}" />
+                                                    <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding LostText}" />
+                                                    <TextBlock Grid.Column="3" Classes="cell mono" Text="{Binding LossText}" />
+                                                    <TextBlock Grid.Column="4" Classes="cell mono" Text="{Binding RoutesText}" />
+                                                    <TextBlock Grid.Column="5" Classes="cell" Text="{Binding UpdatedText}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
+                                <Border Grid.Row="2" Grid.Column="2" Classes="subtle" Padding="14,12" VerticalAlignment="Top">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Classes="h3" Text="路由明细" />
+                                        <TextBlock Classes="caption" Text="选择左侧节点查看各路由的统计。"
+                                                   IsVisible="{Binding SelectedRow, Converter={x:Static ObjectConverters.IsNull}}" />
+                                        <ItemsControl ItemsSource="{Binding Routes}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:RouteStatRowViewModel">
+                                                    <StackPanel Spacing="2" Margin="0,0,0,8">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <Ellipse Classes="dot" Classes.success="{Binding IsSuccess}" Classes.warning="{Binding IsWarning}"
+                                                                     Classes.danger="{Binding IsDanger}" />
+                                                            <TextBlock Classes="cell mono" Text="{Binding EndpointText}" />
+                                                            <Border Classes="pill">
+                                                                <TextBlock Text="{Binding TransportText}" />
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <TextBlock Classes="caption" Margin="16,0,0,0">
+                                                            <Run Text="{Binding SentText}" /><Run Text=" 发 · " /><Run Text="{Binding LostText}" /><Run Text=" 丢 · 丢包率 " /><Run Text="{Binding LossText}" /><Run Text=" · " /><Run Text="{Binding UpdatedText}" />
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
+            </TabItem>
+        </TabControl>
+    </Border>
+</UserControl>

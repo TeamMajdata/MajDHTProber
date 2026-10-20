@@ -1,0 +1,98 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajDHTProber.ViewModels"
+             xmlns:logging="using:MajDHTProber.Logging"
+             xmlns:c="using:MajDHTProber.Controls"
+             xmlns:conv="using:MajDHTProber.Converters"
+             x:Class="MajDHTProber.Views.LogsView"
+             x:DataType="vm:LogsViewModel">
+    <Border Classes="card" Padding="16" Margin="0,0,0,16">
+        <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                <TextBox Text="{Binding SearchText}" PlaceholderText="搜索日志内容或来源…">
+                    <TextBox.InnerLeftContent>
+                        <c:LineIcon Classes="small" Data="{StaticResource Icon.Search}" Margin="10,0,0,0" Foreground="{DynamicResource TextTertiaryBrush}" />
+                    </TextBox.InnerLeftContent>
+                </TextBox>
+                <ComboBox Grid.Column="1" Width="150" ItemsSource="{Binding LevelFilters}" SelectedItem="{Binding SelectedLevelFilter}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:LogLevelOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <ComboBox Grid.Column="2" Width="190" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}" />
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6">
+                    <Button Command="{Binding ExportCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <c:LineIcon Data="{StaticResource Icon.Download}" />
+                            <TextBlock Text="导出" />
+                        </StackPanel>
+                    </Button>
+                    <Button Classes="danger" Command="{Binding ClearCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <c:LineIcon Data="{StaticResource Icon.Trash}" />
+                            <TextBlock Text="清空" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="16">
+                <ToggleSwitch IsChecked="{Binding AutoScroll}" OnContent="跟随最新" OffContent="跟随最新" />
+                <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsPaused}" OnContent="已暂停" OffContent="实时" />
+                <TextBlock Grid.Column="3" Classes="caption" VerticalAlignment="Center" Text="捕获级别" />
+                <ComboBox Grid.Column="4" Width="160" ItemsSource="{Binding CaptureLevels}" SelectedItem="{Binding SelectedCaptureLevel}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:LogLevelOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </Grid>
+            <Border Grid.Row="2" Classes="code" Padding="4">
+                <ListBox Name="EntryList" Classes="rows" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}">
+                    <ListBox.Styles>
+                        <Style Selector="ListBoxItem">
+                            <Setter Property="Padding" Value="8,3" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="MinHeight" Value="0" />
+                        </Style>
+                    </ListBox.Styles>
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="复制该条日志" Command="{Binding CopySelectedCommand}" />
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="logging:LogEntry">
+                            <Grid ColumnDefinitions="96,44,170,*">
+                                <TextBlock Classes="mono" FontSize="12" Foreground="{DynamicResource TextTertiaryBrush}" Text="{Binding TimeText}" />
+                                <TextBlock Grid.Column="1" Classes="mono" FontSize="12" FontWeight="SemiBold" Text="{Binding LevelText}"
+                                           Classes.debug="{Binding Level, Converter={x:Static conv:LogLevelConverters.IsDebug}}"
+                                           Classes.warning="{Binding Level, Converter={x:Static conv:LogLevelConverters.IsWarning}}"
+                                           Classes.error="{Binding Level, Converter={x:Static conv:LogLevelConverters.IsError}}" />
+                                <TextBlock Grid.Column="2" FontSize="12" Foreground="{DynamicResource AccentTextBrush}" Text="{Binding Category}"
+                                           TextTrimming="CharacterEllipsis" Margin="0,0,10,0" />
+                                <TextBlock Grid.Column="3" Classes="mono" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextPrimaryBrush}"
+                                           Text="{Binding FullText}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+            <TextBlock Grid.Row="3" Classes="caption" Text="{Binding CountText}" />
+        </Grid>
+    </Border>
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.debug">
+            <Setter Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.warning">
+            <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+        </Style>
+        <Style Selector="TextBlock.error">
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+        </Style>
+    </UserControl.Styles>
+</UserControl>

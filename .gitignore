@@ -1,0 +1,80 @@
+## .gitignore for MajDHTProber (.NET 10 + Avalonia).
+## Based on https://github.com/github/gitignore/blob/main/Dotnet.gitignore
+## and the IDE-specific entries of VisualStudio.gitignore.
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+publish/
+
+# .NET
+project.lock.json
+project.fragment.lock.json
+*.nupkg
+*.snupkg
+
+# MSBuild binary and structured logs
+*.binlog
+[Bb]uild[Ll]og.*
+
+# Test results and coverage
+[Tt]est[Rr]esult*/
+TestResult.xml
+*.trx
+coverage*.json
+coverage*.xml
+coverage*.info
+CodeCoverage/
+
+# Visual Studio
+.vs/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+*.rsuser
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# Visual Studio Code (shared settings may be committed explicitly)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Operating system files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor backups and temporary files
+~$*
+*~
+*.swp
+*.tmp
+*.bak
+
+# Secrets and local environment
+.env
+*.seed
+
+# Local prober data: settings, identity seeds and UI test screenshots
+.work/
+screenshots/

@@ -1,0 +1,32 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajDHTProber.ViewModels"
+             xmlns:v="using:MajDHTProber.Views"
+             x:Class="MajDHTProber.App"
+             RequestedThemeVariant="Default">
+    <!-- "Default" follows the system theme; the settings page switches between Default, Light and Dark. -->
+    <Application.DataTemplates>
+        <DataTemplate DataType="vm:BannerViewModel">
+            <v:BannerView />
+        </DataTemplate>
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://MajDHTProber/Themes/Palette.axaml" />
+                <ResourceInclude Source="avares://MajDHTProber/Themes/Icons.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <ColorPaletteResources x:Key="Light" Accent="#FF5B5BD6" />
+                <ColorPaletteResources x:Key="Dark" Accent="#FF8686F2" />
+            </FluentTheme.Palettes>
+        </FluentTheme>
+        <StyleInclude Source="avares://MajDHTProber/Themes/Controls.axaml" />
+    </Application.Styles>
+</Application>

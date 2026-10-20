@@ -1,0 +1,274 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajDHTProber.ViewModels"
+             xmlns:c="using:MajDHTProber.Controls"
+             x:Class="MajDHTProber.Views.ContentView"
+             x:DataType="vm:ContentViewModel">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <Grid ColumnDefinitions="*,16,*" Margin="0,0,14,24">
+            <!-- Left column: publish and pull -->
+            <StackPanel Spacing="16">
+                <Border Classes="card">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Border Classes="iconbadge">
+                                <c:LineIcon Data="{StaticResource Icon.Upload}" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Classes="h2" Text="发布内容" />
+                                <TextBlock Classes="caption" Text="以当前节点的发布者身份签名清单，并公告到键附近的节点。" />
+                            </StackPanel>
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="名称（区分大小写，最多 256 字节）" />
+                                <TextBox Classes="mono" Text="{Binding PublishName}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Classes="label" Text="修订" />
+                                <NumericUpDown Value="{Binding PublishRevision}" Minimum="1" Maximum="9000000000000000000" Increment="1"
+                                               FormatString="0" Width="130" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Classes="label" Text="来源" />
+                                <ComboBox ItemsSource="{Binding PublishModes}" SelectedIndex="{Binding PublishModeIndex}" Width="96" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBox Classes="mono" Text="{Binding PublishText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="96" MaxHeight="220"
+                                 IsVisible="{Binding IsTextMode}" PlaceholderText="要发布的文本（UTF-8）" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding IsFileMode}">
+                            <TextBox Classes="mono" Text="{Binding PublishFilePath}" PlaceholderText="选择本地文件" />
+                            <Button Grid.Column="1" Command="{Binding BrowsePublishFileCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <c:LineIcon Data="{StaticResource Icon.Folder}" />
+                                    <TextBlock Text="浏览" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Classes="accent" Command="{Binding PublishCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <c:LineIcon Data="{StaticResource Icon.Upload}" />
+                                    <TextBlock Text="发布" />
+                                </StackPanel>
+                            </Button>
+                            <Button Content="取消" Command="{Binding PublishCancelCommand}" IsVisible="{Binding PublishCommand.IsRunning}" />
+                        </StackPanel>
+                        <ContentControl Content="{Binding PublishResult}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Border Classes="iconbadge">
+                                <c:LineIcon Data="{StaticResource Icon.Download}" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Classes="h2" Text="文件拉取" />
+                                <TextBlock Classes="caption" Text="按键解析签名记录，或直接使用记录码，从多个提供者并发下载并逐块校验。" />
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Classes="label" Text="键（发布者ID:名称）或记录码" />
+                            <TextBox Classes="mono" Text="{Binding DownloadInput}" TextWrapping="Wrap" AcceptsReturn="False"
+                                     PlaceholderText="例如 3f2a…c9:prober/hello.txt" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Classes="label" Text="可信文件 SHA-256（可选，用于固定内容）" />
+                            <TextBox Classes="mono" Text="{Binding ExpectedHash}" PlaceholderText="64 位十六进制" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                            <ComboBox ItemsSource="{Binding DownloadModes}" SelectedIndex="{Binding DownloadModeIndex}" Width="130" />
+                            <TextBox Grid.Column="1" Classes="mono" Text="{Binding DownloadFilePath}" PlaceholderText="保存位置"
+                                     IsVisible="{Binding IsSaveMode}" />
+                            <Button Grid.Column="2" Command="{Binding BrowseDownloadFileCommand}" IsVisible="{Binding IsSaveMode}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <c:LineIcon Data="{StaticResource Icon.Folder}" />
+                                    <TextBlock Text="另存为" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Classes="accent" Command="{Binding DownloadCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <c:LineIcon Data="{StaticResource Icon.Download}" />
+                                    <TextBlock Text="拉取" />
+                                </StackPanel>
+                            </Button>
+                            <Button Content="取消" Command="{Binding DownloadCancelCommand}" IsVisible="{Binding DownloadCommand.IsRunning}" />
+                        </StackPanel>
+                        <StackPanel Spacing="4" IsVisible="{Binding IsDownloading}">
+                            <ProgressBar Value="{Binding DownloadProgress}" Minimum="0" Maximum="100" />
+                            <TextBlock Classes="caption" Text="{Binding DownloadProgressText}" />
+                        </StackPanel>
+                        <TextBlock Classes="caption" Text="{Binding DownloadProgressText}" IsVisible="{Binding !IsDownloading}" />
+                        <ContentControl Content="{Binding DownloadResult}" />
+                        <StackPanel Spacing="8" IsVisible="{Binding HasPreview}">
+                            <StackPanel Spacing="4" IsVisible="{Binding HasTextPreview}">
+                                <TextBlock Classes="label" Text="文本预览" />
+                                <Border Classes="code" MaxHeight="220">
+                                    <ScrollViewer>
+                                        <SelectableTextBlock Classes="mono" TextWrapping="Wrap" Text="{Binding PreviewText}" />
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Classes="label" Text="十六进制预览（前 4 KiB）" />
+                            <Border Classes="code" MaxHeight="260">
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto">
+                                    <SelectableTextBlock Classes="mono" FontSize="12" Text="{Binding HexPreview}" />
+                                </ScrollViewer>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Right column: records, lookups and import -->
+            <StackPanel Grid.Column="2" Spacing="16">
+                <Border Classes="card">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Border Classes="iconbadge">
+                                <c:LineIcon Data="{StaticResource Icon.Content}" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Classes="h2" Text="本节点记录" />
+                                <TextBlock Classes="caption" Text="当前节点发布、导入、下载、解析或撤回过的签名记录。" />
+                            </StackPanel>
+                        </StackPanel>
+                        <Border Classes="tablehead">
+                            <Grid ColumnDefinitions="1.8*,0.8*,0.8*,0.6*,0.9*">
+                                <TextBlock Classes="head" Text="名称 / 发布者" />
+                                <TextBlock Grid.Column="1" Classes="head" Text="大小" />
+                                <TextBlock Grid.Column="2" Classes="head" Text="来源" />
+                                <TextBlock Grid.Column="3" Classes="head" Text="修订" />
+                                <TextBlock Grid.Column="4" Classes="head" Text="状态" />
+                            </Grid>
+                        </Border>
+                        <ListBox Classes="rows" ItemsSource="{Binding Records}" SelectedItem="{Binding SelectedRecord}" MaxHeight="300">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:RecordItemViewModel">
+                                    <Grid ColumnDefinitions="1.8*,0.8*,0.8*,0.6*,0.9*">
+                                        <StackPanel Spacing="1">
+                                            <TextBlock Classes="cell mono" FontWeight="SemiBold" Text="{Binding Name}" />
+                                            <TextBlock FontSize="11.5" Foreground="{DynamicResource TextTertiaryBrush}" Classes="mono" Text="{Binding PublisherText}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Classes="cell" Text="{Binding SizeText}" />
+                                        <TextBlock Grid.Column="2" Classes="cell" Text="{Binding OriginText}" />
+                                        <TextBlock Grid.Column="3" Classes="cell mono" Text="{Binding RevisionText}" />
+                                        <Border Grid.Column="4" Classes="pill" Classes.success="{Binding IsSuccess}" Classes.info="{Binding IsInfo}"
+                                                Classes.warning="{Binding IsWarning}" Classes.danger="{Binding IsDanger}">
+                                            <TextBlock Text="{Binding StatusText}" />
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Classes="caption" Text="暂无记录。发布或拉取内容后会显示在这里。" IsVisible="{Binding !Records.Count}" Margin="10,0" />
+
+                        <Border Classes="subtle" Padding="14,12" IsVisible="{Binding HasSelectedRecord}">
+                            <StackPanel Spacing="10">
+                                <ContentControl Content="{Binding SelectedRecord}">
+                                    <ContentControl.ContentTemplate>
+                                        <DataTemplate x:DataType="vm:RecordItemViewModel">
+                                            <Grid ColumnDefinitions="76,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+                                                <TextBlock Classes="field" Text="键" />
+                                                <SelectableTextBlock Grid.Column="1" Classes="mono value" FontSize="12" Text="{Binding KeyText}" />
+                                                <TextBlock Grid.Row="1" Classes="field" Text="文件哈希" />
+                                                <TextBlock Grid.Row="1" Grid.Column="1" Classes="mono value" Text="{Binding HashText}" />
+                                                <TextBlock Grid.Row="2" Classes="field" Text="分块" />
+                                                <TextBlock Grid.Row="2" Grid.Column="1" Classes="value" Text="{Binding BlocksText}" />
+                                                <TextBlock Grid.Row="3" Classes="field" Text="租期 · 副本" />
+                                                <TextBlock Grid.Row="3" Grid.Column="1" Classes="value">
+                                                    <Run Text="{Binding ExpiresText}" /><Run Text="到期 · 上次公告副本数 " /><Run Text="{Binding ReplicasText}" />
+                                                </TextBlock>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ContentControl.ContentTemplate>
+                                </ContentControl>
+                                <WrapPanel ItemSpacing="6" LineSpacing="6">
+                                    <Button Padding="9,4" Content="复制键" Command="{Binding CopyKeyCommand}" />
+                                    <Button Padding="9,4" Content="复制哈希" Command="{Binding CopyHashCommand}" />
+                                    <Button Padding="9,4" Content="复制记录码" Command="{Binding CopyRecordCodeCommand}" />
+                                    <Button Padding="9,4" Content="用于拉取" Command="{Binding UseForDownloadCommand}" />
+                                    <Button Padding="9,4" Content="查找提供者" Command="{Binding FindSelectedProvidersCommand}" />
+                                    <Button Padding="9,4" Content="重新公告" Command="{Binding AnnounceCommand}" />
+                                    <Button Padding="9,4" Content="停止提供" Command="{Binding StopProvidingCommand}" />
+                                    <Button Padding="9,4" Classes="danger" Content="撤回键" Command="{Binding UnpublishCommand}"
+                                            IsVisible="{Binding SelectedRecordIsOwn}" />
+                                </WrapPanel>
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBox Classes="mono" Text="{Binding AliasName}" PlaceholderText="为该内容发布别名，例如 prober/alias.txt" />
+                                    <Button Grid.Column="1" Content="发布别名" Command="{Binding PublishAliasCommand}" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <ContentControl Content="{Binding RecordResult}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Border Classes="iconbadge">
+                                <c:LineIcon Data="{StaticResource Icon.Search}" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Classes="h2" Text="解析与提供者" />
+                                <TextBlock Classes="caption" Text="沿多条不相交路径解析键，或按整文件哈希查找提供者。" />
+                            </StackPanel>
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBox Classes="mono" Text="{Binding ResolveInput}" PlaceholderText="键或记录码" />
+                            <Button Grid.Column="1" Content="解析" Command="{Binding ResolveCommand}" />
+                        </Grid>
+                        <Border Classes="code" IsVisible="{Binding ResolvedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                            <SelectableTextBlock Classes="mono" FontSize="12" TextWrapping="Wrap" Text="{Binding ResolvedText}" />
+                        </Border>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBox Classes="mono" Text="{Binding ProvidersHash}" PlaceholderText="整文件 SHA-256" />
+                            <Button Grid.Column="1" Content="查找提供者" Command="{Binding FindProvidersCommand}" />
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Providers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Border Classes="subtle" Margin="0,0,0,6" Padding="10,6">
+                                        <SelectableTextBlock Classes="mono" FontSize="12" Text="{Binding}" />
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <ContentControl Content="{Binding LookupResult}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Border Classes="iconbadge">
+                                <c:LineIcon Data="{StaticResource Icon.Key}" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Classes="h2" Text="导入他人内容副本" />
+                                <TextBlock Classes="caption" Text="用已有签名记录校验本地文件（长度、Merkle 根与整文件哈希），通过后本节点成为提供者。" />
+                            </StackPanel>
+                        </StackPanel>
+                        <TextBox Classes="mono" Text="{Binding ImportRecordCode}" PlaceholderText="记录码（Base64）" TextWrapping="Wrap" />
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <TextBox Classes="mono" Text="{Binding ImportFilePath}" PlaceholderText="本地副本文件" />
+                            <Button Grid.Column="1" Command="{Binding BrowseImportFileCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <c:LineIcon Data="{StaticResource Icon.Folder}" />
+                                    <TextBlock Text="浏览" />
+                                </StackPanel>
+                            </Button>
+                            <Button Grid.Column="2" Content="校验并导入" Command="{Binding ImportCommand}" />
+                        </Grid>
+                        <ContentControl Content="{Binding ImportResult}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

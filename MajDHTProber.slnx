@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/modules/">
+    <Project Path="modules/MajDHTNetwork/MajDHTNetwork.csproj" />
+  </Folder>
+  <Project Path="src/MajDHTProber/MajDHTProber.csproj" />
+  <Project Path="src/MajDHTProber.Tests/MajDHTProber.Tests.csproj" />
+</Solution>

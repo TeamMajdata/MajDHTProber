@@ -1,0 +1,251 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajDHTProber.ViewModels"
+             xmlns:c="using:MajDHTProber.Controls"
+             x:Class="MajDHTProber.Views.OverviewView"
+             x:DataType="vm:OverviewViewModel">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="16" Margin="0,0,14,24">
+            <!-- Node identity card -->
+            <Border Classes="card">
+                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Border Classes="iconbadge" Width="40" Height="40" CornerRadius="10">
+                            <c:LineIcon Data="{StaticResource Icon.Server}" Width="20" Height="20" />
+                        </Border>
+                        <StackPanel VerticalAlignment="Center" Spacing="3">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <TextBlock Classes="h2" FontSize="17" Text="{Binding Active.Label}" />
+                                <Border Classes="pill" Classes.success="{Binding Active.IsSuccess}" Classes.info="{Binding Active.IsInfo}"
+                                        Classes.danger="{Binding Active.IsDanger}">
+                                    <TextBlock Text="{Binding Active.StateText}" />
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Classes="caption" Text="{Binding Active.DetailText}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button Classes="accent" Command="{Binding StartCommand}" IsVisible="{Binding Active.CanStart}">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <c:LineIcon Data="{StaticResource Icon.Play}" />
+                                <TextBlock Text="启动节点" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding BootstrapCommand}" IsEnabled="{Binding Active.IsRunning}" ToolTip.Tip="联系设置中的引导端点并查找邻居">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <c:LineIcon Data="{StaticResource Icon.Link}" />
+                                <TextBlock Text="引导" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding RefreshNeighborsCommand}" IsEnabled="{Binding Active.IsRunning}" ToolTip.Tip="以自身 ID 进行一次迭代查找">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <c:LineIcon Data="{StaticResource Icon.Refresh}" />
+                                <TextBlock Text="刷新邻居" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding RestartCommand}" IsVisible="{Binding Active.IsRunning}" ToolTip.Tip="以当前设置重新启动节点">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <c:LineIcon Data="{StaticResource Icon.Refresh}" />
+                                <TextBlock Text="重启" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="danger" Command="{Binding StopCommand}" IsVisible="{Binding Active.IsRunning}">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <c:LineIcon Data="{StaticResource Icon.Stop}" />
+                                <TextBlock Text="停止" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <Border Grid.Row="1" Grid.ColumnSpan="2" Classes="banner warning" Margin="0,16,0,0" IsVisible="{Binding ShowNoEndpointWarning}">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <c:LineIcon Data="{StaticResource Icon.Warning}" Margin="0,0,10,0" VerticalAlignment="Top" />
+                            <TextBlock Grid.Column="1"
+                                       Text="当前节点没有通告任何端点：其他节点能应答它的请求，却无法主动连接它，也不会把它加入路由表。若需被其他节点发现，请在设置中监听具体地址，或填写“通告地址”（例如本机局域网 IP）。" />
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="2" Grid.ColumnSpan="2" Margin="0,18,0,0" ColumnDefinitions="*,24,*">
+                        <Grid ColumnDefinitions="96,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+                            <TextBlock Classes="field" Text="节点 ID" />
+                            <Grid Grid.Column="1" ColumnDefinitions="*,Auto">
+                                <SelectableTextBlock Classes="mono value" Text="{Binding NodeIdText}" />
+                                <Button Grid.Column="1" Classes="iconbutton" Padding="4" Margin="6,-4,0,0" VerticalAlignment="Top"
+                                        Command="{Binding CopyNodeIdCommand}" ToolTip.Tip="复制节点 ID">
+                                    <c:LineIcon Classes="small" Data="{StaticResource Icon.Copy}" />
+                                </Button>
+                            </Grid>
+                            <TextBlock Grid.Row="1" Classes="field" Text="能力" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Classes="value" Text="{Binding CapabilitiesText}" />
+                            <TextBlock Grid.Row="2" Classes="field" Text="身份工作量" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Classes="value" Text="{Binding IdentityWorkText}" />
+                            <TextBlock Grid.Row="3" Classes="field" Text="联系人租期" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Classes="value" Text="{Binding ContactLeaseText}" />
+                            <TextBlock Grid.Row="4" Classes="field" Text="监听" />
+                            <TextBlock Grid.Row="4" Grid.Column="1" Classes="value" Text="{Binding ListenText}" />
+                        </Grid>
+                        <Grid Grid.Column="2" ColumnDefinitions="96,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+                            <TextBlock Classes="field" Text="可达性" />
+                            <TextBlock Grid.Column="1" Classes="value" Text="{Binding ReachabilityText}" />
+                            <TextBlock Grid.Row="1" Classes="field" Text="外部地址" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Classes="value" Text="{Binding ExternalAddressText}" />
+                            <TextBlock Grid.Row="2" Classes="field" Text="NAT 映射" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Classes="value" Text="{Binding MappingText}" />
+                            <TextBlock Grid.Row="3" Classes="field" Text="中继提示" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Classes="value" Text="{Binding RelayHintsText}" />
+                            <TextBlock Grid.Row="4" Classes="field" Text="引导端点" />
+                            <TextBlock Grid.Row="4" Grid.Column="1" Classes="value" Text="{Binding BootstrapText}" />
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- Metrics -->
+            <UniformGrid Columns="5" ColumnSpacing="16">
+                <Border Classes="card" Padding="16,14">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="label" Text="已知节点" />
+                        <TextBlock Classes="metric" Text="{Binding PeerTotal}" />
+                        <TextBlock Classes="caption" Text="{Binding RoutingTableSize, StringFormat='路由表 {0} 个'}" />
+                    </StackPanel>
+                </Border>
+                <Border Classes="card" Padding="16,14">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="label" Text="已连接" />
+                        <TextBlock Classes="metric" Foreground="{DynamicResource SuccessBrush}" Text="{Binding ConnectedCount}" />
+                        <TextBlock Classes="caption" Text="{Binding ReachableCount, StringFormat='另有 {0} 个可达'}" />
+                    </StackPanel>
+                </Border>
+                <Border Classes="card" Padding="16,14">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="label" Text="已断开 / 过期" />
+                        <TextBlock Classes="metric" Foreground="{DynamicResource DangerBrush}" Text="{Binding DisconnectedCount}" />
+                        <TextBlock Classes="caption" Text="请求或探测失败的节点" />
+                    </StackPanel>
+                </Border>
+                <Border Classes="card" Padding="16,14">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="label" Text="丢包率" />
+                        <TextBlock Classes="metric" Text="{Binding LossText}" />
+                        <TextBlock Classes="caption" Text="{Binding TrafficText}" />
+                    </StackPanel>
+                </Border>
+                <Border Classes="card" Padding="16,14">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="label" Text="记录 · 警告/错误" />
+                        <TextBlock Classes="metric" Text="{Binding RecordCount}" />
+                        <TextBlock Classes="caption" Text="{Binding ProblemsText, StringFormat='日志 {0}'}" />
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <!-- Advertised endpoints -->
+            <Border Classes="card">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="2">
+                            <TextBlock Classes="h2" Text="通告端点" />
+                            <TextBlock Classes="caption" Text="签名联系人中通告给其他节点的地址；“已验证”表示独立回拨确认可从外部访问。" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Command="{Binding CopyEndpointCommand}" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <c:LineIcon Data="{StaticResource Icon.Copy}" />
+                                <TextBlock Text="复制连接端点" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                    <Border Classes="tablehead">
+                        <Grid ColumnDefinitions="2*,*,*,2*">
+                            <TextBlock Classes="head" Text="地址" />
+                            <TextBlock Grid.Column="1" Classes="head" Text="TCP" />
+                            <TextBlock Grid.Column="2" Classes="head" Text="UDP" />
+                            <TextBlock Grid.Column="3" Classes="head" Text="标记" />
+                        </Grid>
+                    </Border>
+                    <ItemsControl ItemsSource="{Binding Endpoints}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:EndpointRowViewModel">
+                                <Grid ColumnDefinitions="2*,*,*,2*" Margin="10,5">
+                                    <TextBlock Classes="cell mono" Text="{Binding AddressText}" />
+                                    <TextBlock Grid.Column="1" Classes="cell mono" Text="{Binding TcpText}" />
+                                    <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding UdpText}" />
+                                    <Border Grid.Column="3" Classes="pill" Classes.success="{Binding IsVerified}">
+                                        <TextBlock Text="{Binding FlagsText}" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Classes="caption" Text="节点未运行或未通告端点。" IsVisible="{Binding !Endpoints.Count}" Margin="10,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- Hosted nodes -->
+            <Border Classes="card">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="2">
+                            <TextBlock Classes="h2" Text="本地测试网络" />
+                            <TextBlock Classes="caption"
+                                       Text="在本进程内创建监听 127.0.0.1 的额外节点，自动经已运行的节点引导并互相引介，用于在没有外部网络时调试节点间通信。在左下角切换“当前操作节点”即可从任意节点发起操作。" />
+                        </StackPanel>
+                    </Grid>
+                    <Border Classes="subtle" Padding="12,10">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Classes="field" Text="新节点能力" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16">
+                                <CheckBox Content="下载" IsChecked="{Binding NewNodeDownload}" />
+                                <CheckBox Content="提供" IsChecked="{Binding NewNodeProvide}" />
+                                <CheckBox Content="中继" IsChecked="{Binding NewNodeRelay}" />
+                            </StackPanel>
+                            <Button Grid.Column="2" Classes="accent" Command="{Binding AddLocalNodeCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <c:LineIcon Data="{StaticResource Icon.Plus}" />
+                                    <TextBlock Text="新建本地节点" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                    </Border>
+                    <Border Classes="tablehead">
+                        <Grid ColumnDefinitions="1.4*,*,1.4*,1.6*,0.7*,Auto">
+                            <TextBlock Classes="head" Text="节点" />
+                            <TextBlock Grid.Column="1" Classes="head" Text="状态" />
+                            <TextBlock Grid.Column="2" Classes="head" Text="节点 ID" />
+                            <TextBlock Grid.Column="3" Classes="head" Text="连接端点" />
+                            <TextBlock Grid.Column="4" Classes="head" Text="已知节点" />
+                            <TextBlock Grid.Column="5" Classes="head" Text="操作" Width="232" />
+                        </Grid>
+                    </Border>
+                    <ItemsControl ItemsSource="{Binding Sessions}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SessionItemViewModel">
+                                <Grid ColumnDefinitions="1.4*,*,1.4*,1.6*,0.7*,Auto" Margin="10,4">
+                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <TextBlock Classes="cell" FontWeight="SemiBold" Text="{Binding Label}" />
+                                        <Border Classes="pill accent" IsVisible="{Binding IsPrimary}">
+                                            <TextBlock Text="主" />
+                                        </Border>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                        <Ellipse Classes="dot" Classes.success="{Binding IsSuccess}" Classes.info="{Binding IsInfo}" Classes.danger="{Binding IsDanger}" />
+                                        <TextBlock Classes="cell" Text="{Binding StateText}" ToolTip.Tip="{Binding DetailText}" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding ShortNodeId}" />
+                                    <TextBlock Grid.Column="3" Classes="cell mono" Text="{Binding EndpointText}" />
+                                    <TextBlock Grid.Column="4" Classes="cell" Text="{Binding PeerCount}" />
+                                    <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" Width="232">
+                                        <Button Padding="9,4" Content="设为当前" Command="{Binding ActivateCommand}" />
+                                        <Button Padding="9,4" Content="启动" IsVisible="{Binding CanStart}" Command="{Binding StartCommand}" />
+                                        <Button Padding="9,4" Content="停止" IsVisible="{Binding IsRunning}" Command="{Binding StopCommand}" />
+                                        <Button Padding="9,4" Classes="danger" Content="移除" IsVisible="{Binding !IsPrimary}"
+                                                Command="{Binding RemoveCommand}" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,0 +1,235 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MajDHTProber.ViewModels"
+             xmlns:c="using:MajDHTProber.Controls"
+             x:Class="MajDHTProber.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+    <Grid RowDefinitions="*,Auto">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <Grid ColumnDefinitions="*,16,*" Margin="0,0,14,16">
+                <StackPanel Spacing="16">
+                    <!-- Network -->
+                    <Border Classes="card">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Border Classes="iconbadge">
+                                    <c:LineIcon Data="{StaticResource Icon.Globe}" />
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Classes="h2" Text="网络与监听" />
+                                    <TextBlock Classes="caption" Text="主节点的监听地址、端口与通告地址。修改后需重启主节点生效。" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="监听地址（1 个，或 IPv4 + IPv6 各 1 个；可用 0.0.0.0 / ::）" />
+                                <TextBox Classes="mono" Text="{Binding ListenAddresses}" PlaceholderText="0.0.0.0, ::" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="通告地址（最多 4 个；留空则自动发现可达性）" />
+                                <TextBox Classes="mono" Text="{Binding AdvertisedAddresses}" PlaceholderText="例如 192.168.1.10" />
+                            </StackPanel>
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                                <StackPanel Spacing="4">
+                                    <CheckBox Content="启用 TCP" IsChecked="{Binding TcpEnabled}" />
+                                    <NumericUpDown Value="{Binding TcpPort}" Minimum="0" Maximum="65535" FormatString="0" IsEnabled="{Binding TcpEnabled}"
+                                                   ToolTip.Tip="0 表示由系统分配" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="4">
+                                    <CheckBox Content="启用 UDP" IsChecked="{Binding UdpEnabled}" />
+                                    <NumericUpDown Value="{Binding UdpPort}" Minimum="0" Maximum="65535" FormatString="0" IsEnabled="{Binding UdpEnabled}"
+                                                   ToolTip.Tip="0 表示由系统分配" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="4">
+                                    <TextBlock Classes="label" Text="优先传输" Margin="0,6,0,8" />
+                                    <ComboBox ItemsSource="{Binding TransportOptions}" SelectedIndex="{Binding PreferredTransportIndex}" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                            </Grid>
+                            <StackPanel Spacing="6">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Classes="label" Text="本机网卡地址（点击加入通告地址）" />
+                                    <Button Grid.Column="1" Classes="link" Content="刷新" Command="{Binding ReloadLocalAddressesCommand}" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding LocalAddresses}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel ItemSpacing="6" LineSpacing="6" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:LocalAddressViewModel">
+                                            <Button Padding="9,4" ToolTip.Tip="{Binding InterfaceName}" Command="{Binding AdvertiseCommand}">
+                                                <TextBlock Classes="mono" Text="{Binding Address}" />
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Classes="label" Text="引导端点（每行一个 IP:端口，最多 16 个；启动时会在后台自动引导）" />
+                                <TextBox Classes="mono" Text="{Binding BootstrapText}" AcceptsReturn="True" MinHeight="84" TextWrapping="NoWrap"
+                                         PlaceholderText="203.0.113.5:42000&#x0a;[2001:db8::1]:42000" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Capabilities -->
+                    <Border Classes="card">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Border Classes="iconbadge">
+                                    <c:LineIcon Data="{StaticResource Icon.Server}" />
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Classes="h2" Text="能力与 NAT" />
+                                    <TextBlock Classes="caption" Text="节点在签名联系人中声明并强制执行的服务。" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="20">
+                                <CheckBox Content="下载 (Download)" IsChecked="{Binding CapabilityDownload}" />
+                                <CheckBox Content="提供 (Provide)" IsChecked="{Binding CapabilityProvide}" />
+                                <CheckBox Content="中继 (Relay)" IsChecked="{Binding CapabilityRelay}" />
+                            </StackPanel>
+                            <ToggleSwitch IsChecked="{Binding EnableNatTraversal}" OnContent="启用 NAT 穿透：注册中继、检查可达性、自动打洞"
+                                          OffContent="已关闭 NAT 穿透" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Spacing="16">
+                    <!-- Protocol -->
+                    <Border Classes="card">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Border Classes="iconbadge">
+                                    <c:LineIcon Data="{StaticResource Icon.Activity}" />
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Classes="h2" Text="协议参数" />
+                                    <TextBlock Classes="caption" Text="身份工作量必须与被探测网络一致，否则对方会拒绝本节点的请求。" />
+                                </StackPanel>
+                            </StackPanel>
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+                                <StackPanel>
+                                    <TextBlock Classes="label" Text="身份工作量（位，0–20）" />
+                                    <NumericUpDown Value="{Binding IdentityWorkBits}" Minimum="0" Maximum="20" FormatString="0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Classes="label" Text="请求超时（秒）" />
+                                    <NumericUpDown Value="{Binding RequestTimeoutSeconds}" Minimum="0.05" Maximum="120" Increment="0.5" FormatString="0.##" />
+                                </StackPanel>
+                                <StackPanel Grid.Row="1">
+                                    <TextBlock Classes="label" Text="UDP 发送次数（含首次）" />
+                                    <NumericUpDown Value="{Binding UdpAttempts}" Minimum="1" Maximum="5" FormatString="0" />
+                                </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.Column="1">
+                                    <TextBlock Classes="label" Text="新发布的块大小（字节）" />
+                                    <ComboBox ItemsSource="{Binding BlockSizeOptions}" SelectedItem="{Binding BlockSize}" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                                <StackPanel Grid.Row="2">
+                                    <TextBlock Classes="label" Text="维护间隔（分钟）" />
+                                    <NumericUpDown Value="{Binding MaintenanceIntervalMinutes}" Minimum="0.1" Maximum="60" Increment="1" FormatString="0.##" />
+                                </StackPanel>
+                                <StackPanel Grid.Row="2" Grid.Column="1">
+                                    <TextBlock Classes="label" Text="发布租期（小时）" />
+                                    <NumericUpDown Value="{Binding RecordLifetimeHours}" Minimum="0.01" Maximum="168" Increment="1" FormatString="0.##" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Identity -->
+                    <Border Classes="card">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Border Classes="iconbadge">
+                                    <c:LineIcon Data="{StaticResource Icon.Key}" />
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Classes="h2" Text="身份" />
+                                    <TextBlock Classes="caption" Text="身份种子是私密数据，仅保存在本机用户数据目录，从不写入日志。" />
+                                </StackPanel>
+                            </StackPanel>
+                            <Border Classes="subtle">
+                                <SelectableTextBlock Classes="mono value" FontSize="12" Text="{Binding PrimaryNodeIdText}" />
+                            </Border>
+                            <ToggleSwitch IsChecked="{Binding PersistIdentity}" OnContent="保存身份种子，重启后节点 ID 不变" OffContent="每次运行使用临时身份" />
+                            <Button Classes="danger" Command="{Binding ResetIdentityCommand}" IsEnabled="{Binding CanResetIdentity}"
+                                    ToolTip.Tip="需先停止主节点">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <c:LineIcon Data="{StaticResource Icon.Refresh}" />
+                                    <TextBlock Text="重置主节点身份" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- App -->
+                    <Border Classes="card">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Border Classes="iconbadge">
+                                    <c:LineIcon Data="{StaticResource Icon.Settings}" />
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Classes="h2" Text="探测器" />
+                                    <TextBlock Classes="caption" Text="外观、日志与启动行为。" />
+                                </StackPanel>
+                            </StackPanel>
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <StackPanel>
+                                    <TextBlock Classes="label" Text="主题" />
+                                    <ComboBox ItemsSource="{Binding ThemeOptions}" SelectedIndex="{Binding ThemeIndex}" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Classes="label" Text="日志捕获级别" />
+                                    <ComboBox ItemsSource="{Binding LogLevelOptions}" SelectedItem="{Binding SelectedLogLevel}" HorizontalAlignment="Stretch">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:LogLevelOption">
+                                                <TextBlock Text="{Binding Label}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+                            <ToggleSwitch IsChecked="{Binding AutoStart}" OnContent="启动探测器时自动启动主节点" OffContent="手动启动主节点" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- Action bar -->
+        <Border Grid.Row="1" Classes="card" Padding="16,12" Margin="0,0,0,16">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel VerticalAlignment="Center" Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Border Classes="pill warning" IsVisible="{Binding IsDirty}">
+                            <TextBlock Text="有未保存的更改" />
+                        </Border>
+                        <Border Classes="pill success" IsVisible="{Binding !IsDirty}">
+                            <TextBlock Text="已保存" />
+                        </Border>
+                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding Errors}" IsVisible="{Binding HasErrors}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Foreground="{DynamicResource DangerBrush}" FontSize="12.5" TextWrapping="Wrap" Text="{Binding StringFormat='• {0}'}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button Classes="ghost" Content="恢复默认" Command="{Binding ResetDefaultsCommand}" />
+                    <Button Content="撤销更改" Command="{Binding RevertCommand}" IsEnabled="{Binding IsDirty}" />
+                    <Button Content="保存" Command="{Binding SaveCommand}" />
+                    <Button Classes="accent" Command="{Binding SaveAndRestartCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <c:LineIcon Data="{StaticResource Icon.Check}" />
+                            <TextBlock Text="保存并应用" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
