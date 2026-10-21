@@ -74,6 +74,29 @@ namespace MajDHTProber.Tests
             Assert.Equal(DHTCapabilities.Download | DHTCapabilities.Provide, options.Capabilities);
             Assert.Equal(12, options.IdentityWorkBits);
             Assert.Equal(TimeSpan.FromSeconds(5), options.RequestTimeout);
+            Assert.Equal(TimeSpan.FromMinutes(5), options.MaintenanceInterval);
+            Assert.Equal(TimeSpan.FromMinutes(30), options.RepublishInterval);
+        }
+
+        /// <summary>
+        /// The republish interval maps independently of the maintenance interval, which no longer sets how often records are
+        /// reannounced, and its one-second minimum converts exactly.
+        /// </summary>
+        [Fact]
+        public void MapsRepublishInterval()
+        {
+            var settings = new ProberSettings { MaintenanceIntervalMinutes = 1, RepublishIntervalMinutes = 2 };
+
+            var options = NodeOptionsBuilder.Build(settings, NullLogger.Instance);
+            settings.RepublishIntervalMinutes = 1.0 / 60;
+            var shortest = NodeOptionsBuilder.Build(settings, NullLogger.Instance);
+            settings.RepublishIntervalMinutes = 45;
+            var longest = NodeOptionsBuilder.Build(settings, NullLogger.Instance);
+
+            Assert.Equal(TimeSpan.FromMinutes(1), options.MaintenanceInterval);
+            Assert.Equal(TimeSpan.FromMinutes(2), options.RepublishInterval);
+            Assert.Equal(TimeSpan.FromSeconds(1), shortest.RepublishInterval);
+            Assert.Equal(TimeSpan.FromMinutes(45), longest.RepublishInterval);
         }
 
         /// <summary>Disabled listeners map to null ports and capability flags combine.</summary>
@@ -108,6 +131,7 @@ namespace MajDHTProber.Tests
                 UdpEnabled = false,
                 IdentityWorkBits = 21,
                 BlockSize = 100,
+                RepublishIntervalMinutes = 46,
                 BootstrapEndpoints = { "bad" },
             };
 
@@ -119,6 +143,7 @@ namespace MajDHTProber.Tests
             Assert.Contains(errors, error => error.Contains("至少需要启用一个", StringComparison.Ordinal));
             Assert.Contains(errors, error => error.Contains("身份工作量", StringComparison.Ordinal));
             Assert.Contains(errors, error => error.Contains("块大小", StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains("重新公告间隔", StringComparison.Ordinal));
             Assert.Contains(errors, error => error.Contains("引导端点", StringComparison.Ordinal));
         }
 
@@ -126,7 +151,14 @@ namespace MajDHTProber.Tests
         [Fact]
         public void DerivesLocalNodeSettings()
         {
-            var primary = new ProberSettings { IdentityWorkBits = 8, RequestTimeoutSeconds = 3, BlockSize = 4096, PubliclyReachable = true };
+            var primary = new ProberSettings
+            {
+                IdentityWorkBits = 8,
+                RequestTimeoutSeconds = 3,
+                BlockSize = 4096,
+                RepublishIntervalMinutes = 10,
+                PubliclyReachable = true,
+            };
             var bootstrap = new[] { new IPEndPoint(IPAddress.Loopback, 42000) };
 
             var local = NodeSessionManager.DeriveLocalSettings(primary, bootstrap, new LocalNodeRequest { Capabilities = DHTCapabilities.Forwarder });
@@ -137,6 +169,7 @@ namespace MajDHTProber.Tests
             Assert.Equal(0, local.UdpPort);
             Assert.Equal(8, local.IdentityWorkBits);
             Assert.Equal(4096, local.BlockSize);
+            Assert.Equal(10, local.RepublishIntervalMinutes);
             Assert.Equal(DHTCapabilities.Forwarder, local.Capabilities);
             Assert.Equal(new[] { "127.0.0.1:42000" }, local.BootstrapEndpoints);
             Assert.False(local.PersistRoutingTable);

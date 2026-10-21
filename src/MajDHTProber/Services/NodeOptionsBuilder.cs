@@ -141,6 +141,7 @@ namespace MajDHTProber.Services
             CheckRange(settings.BlockSize, 1024, 32768, "块大小", errors);
             CheckRange(settings.RequestTimeoutSeconds, 0.05, 120, "请求超时（秒）", errors);
             CheckRange(settings.MaintenanceIntervalMinutes, 1.0 / 60, 60, "维护间隔（分钟）", errors);
+            CheckRange(settings.RepublishIntervalMinutes, 1.0 / 60, 45, "重新公告间隔（分钟）", errors);
             CheckRange(settings.RecordLifetimeHours, 1.0 / 3600, 24 * 7, "记录租期（小时）", errors);
             return new DHTNodeOptions
             {
@@ -157,6 +158,7 @@ namespace MajDHTProber.Services
                 UdpAttempts = Math.Clamp(settings.UdpAttempts, 1, 5),
                 BlockSize = Math.Clamp(settings.BlockSize, 1024, 32768),
                 MaintenanceInterval = TimeSpan.FromMinutes(Math.Clamp(settings.MaintenanceIntervalMinutes, 1.0 / 60, 60)),
+                RepublishInterval = TimeSpan.FromMinutes(Math.Clamp(settings.RepublishIntervalMinutes, 1.0 / 60, 45)),
                 RecordLifetime = TimeSpan.FromHours(Math.Clamp(settings.RecordLifetimeHours, 1.0 / 3600, 24 * 7)),
                 Logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
             };

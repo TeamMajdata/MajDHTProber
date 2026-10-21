@@ -89,7 +89,7 @@
                                     <TextBlock Classes="caption" Text="身份工作量必须与被探测网络一致，否则对方会拒绝本节点的请求。" />
                                 </StackPanel>
                             </StackPanel>
-                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
                                 <StackPanel>
                                     <TextBlock Classes="label" Text="身份工作量（位，0–20）" />
                                     <NumericUpDown Value="{Binding IdentityWorkBits}" Minimum="0" Maximum="20" FormatString="0" />
@@ -113,6 +113,10 @@
                                 <StackPanel Grid.Row="2" Grid.Column="1">
                                     <TextBlock Classes="label" Text="发布租期（小时）" />
                                     <NumericUpDown Value="{Binding RecordLifetimeHours}" Minimum="0.01" Maximum="168" Increment="1" FormatString="0.##" />
+                                </StackPanel>
+                                <StackPanel Grid.Row="3" ToolTip.Tip="记录最后一次送达远程副本后，维护流程隔多久重新公告它；批量发布进行时会让路，但不超过 45 分钟">
+                                    <TextBlock Classes="label" Text="重新公告间隔（分钟）" />
+                                    <NumericUpDown Value="{Binding RepublishIntervalMinutes}" Minimum="0.1" Maximum="45" Increment="1" FormatString="0.##" />
                                 </StackPanel>
                             </Grid>
                         </StackPanel>

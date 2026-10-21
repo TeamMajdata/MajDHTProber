@@ -85,6 +85,11 @@ namespace MajDHTProber.Models
         /// <summary>Gets or sets the maintenance interval in minutes.</summary>
         public double MaintenanceIntervalMinutes { get; set; } = 5;
 
+        /// <summary>
+        /// Gets or sets how long after a record last reached a remote replica maintenance announces it again, in minutes.
+        /// </summary>
+        public double RepublishIntervalMinutes { get; set; } = 30;
+
         /// <summary>Gets or sets the lease of new publications in hours.</summary>
         public double RecordLifetimeHours { get; set; } = 24;
 

@@ -139,6 +139,10 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial decimal? MaintenanceIntervalMinutes { get; set; }
 
+        /// <summary>Gets or sets how long after a record last reached a replica maintenance reannounces it, in minutes.</summary>
+        [ObservableProperty]
+        public partial decimal? RepublishIntervalMinutes { get; set; }
+
         /// <summary>Gets or sets the publication lease in hours.</summary>
         [ObservableProperty]
         public partial decimal? RecordLifetimeHours { get; set; }
@@ -242,6 +246,7 @@ namespace MajDHTProber.ViewModels
                 UdpAttempts = (int)(UdpAttempts ?? 3),
                 BlockSize = BlockSize,
                 MaintenanceIntervalMinutes = (double)(MaintenanceIntervalMinutes ?? 5),
+                RepublishIntervalMinutes = (double)(RepublishIntervalMinutes ?? 30),
                 RecordLifetimeHours = (double)(RecordLifetimeHours ?? 24),
                 MinimumLogLevel = SelectedLogLevel?.Level ?? LogLevel.Information,
                 Theme = ThemeIndex switch
@@ -408,6 +413,7 @@ namespace MajDHTProber.ViewModels
                 UdpAttempts = settings.UdpAttempts;
                 BlockSize = settings.BlockSize;
                 MaintenanceIntervalMinutes = (decimal)settings.MaintenanceIntervalMinutes;
+                RepublishIntervalMinutes = (decimal)settings.RepublishIntervalMinutes;
                 RecordLifetimeHours = (decimal)settings.RecordLifetimeHours;
                 SelectedLogLevel = FindLevel(settings.MinimumLogLevel);
                 ThemeIndex = settings.Theme switch

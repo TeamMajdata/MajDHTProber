@@ -12,10 +12,10 @@ dotnet test src/MajDHTProber.Tests/MajDHTProber.Tests.csproj -c Release --filter
 | 文件 | 覆盖内容 |
 | --- | --- |
 | `src/LogSinkTests.cs` | 日志级别过滤、有界缓冲、警告 / 错误计数、异常摘要与监听器隔离。 |
-| `src/ParsingTests.cs` | 端点解析与主机名解析、设置到 `DHTNodeOptions` 的转换与校验、本地节点设置的派生。 |
+| `src/ParsingTests.cs` | 端点解析与主机名解析、设置到 `DHTNodeOptions` 的转换与校验（含独立于维护间隔的重新公告间隔）、本地节点设置的派生。 |
 | `src/FormattingTests.cs` | 显示格式、十六进制转储、文本预览、XOR 公共前缀、集合原地同步、进度流。 |
 | `src/PeerTrackingTests.cs` | 连接状态判定、节点目录合并（联系人序号与观察端点）、追踪路由表的观察 / 移除 / 清除及监听器隔离。 |
-| `src/StorageTests.cs` | 身份持久化与删除、仅内存身份、路由表快照的保存 / 读取 / 删除、设置 JSON 往返、键与记录码解析。 |
+| `src/StorageTests.cs` | 身份持久化与删除、仅内存身份、路由表快照的保存 / 读取 / 删除、设置 JSON 往返、缺少新字段的旧设置文件取默认值、键与记录码解析。 |
 | `src/EndpointProberTests.cs` | 经公开协议层对 TCP / UDP 端点做签名 Hello + 加密 Ping、关闭端口的失败报告、临时客户端接入并下载。 |
 | `src/LanDiscoveryTests.cs` | 局域网扫描：向显式目标发送 Hello 帧、完成 Cookie 握手并收集签名应答、忽略无效数据报、会话记录扫描结果并排除自身、扫描选项派生、子网广播地址计算、UDP 传输帧编解码。回环套接字收不到广播，真实广播需在局域网中手动验证。 |
 | `src/NodeSessionTests.cs` | 会话启动停止、无效设置、经库的 `AddPeerAsync` 按端点添加节点、换端口重启的节点在重新验证后更新观察端点、拒绝添加自身、无应答端点的失败报告、探测已知节点与路由探测、路由表保存与恢复、会话间传输、撤回与停止提供。 |

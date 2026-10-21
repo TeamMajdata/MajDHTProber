@@ -129,10 +129,17 @@ namespace MajDHTProber.Tests
 
             viewModel.ListenAddresses = "127.0.0.1";
             viewModel.PreferredTransportIndex = 1;
+            viewModel.RepublishIntervalMinutes = 46;
+            viewModel.SaveCommand.Execute(null);
+            Assert.True(viewModel.HasErrors);
+            Assert.Contains(viewModel.Errors, error => error.Contains("重新公告间隔", StringComparison.Ordinal));
+
+            viewModel.RepublishIntervalMinutes = 10;
             viewModel.SaveCommand.Execute(null);
             Assert.False(viewModel.HasErrors);
             Assert.False(viewModel.IsDirty);
             Assert.Equal(DHTTransport.Udp, fixture.Manager.Settings.PreferredTransport);
+            Assert.Equal(10, fixture.Manager.Settings.RepublishIntervalMinutes);
 
             viewModel.ThemeIndex = 2;
             Assert.Equal("Dark", fixture.Interaction.Theme);

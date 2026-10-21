@@ -124,6 +124,27 @@ namespace MajDHTProber.Tests
             Assert.True(new ProberSettings().PersistRoutingTable);
         }
 
+        /// <summary>
+        /// A settings file saved before the republish interval existed keeps its maintenance interval and gets the library's
+        /// default republish interval, instead of reannouncing records at the maintenance interval as before.
+        /// </summary>
+        [Fact]
+        public void LoadsSettingsWithoutRepublishInterval()
+        {
+            using var directory = new TempDirectory();
+            var path = Path.Combine(directory.Path, "settings.json");
+            File.WriteAllText(path, "{ \"MaintenanceIntervalMinutes\": 2, \"RecordLifetimeHours\": 12 }");
+            var store = new SettingsStore(path, new LogSink().CreateLogger("设置"));
+
+            var loaded = store.Load();
+
+            Assert.Equal(2, loaded.MaintenanceIntervalMinutes);
+            Assert.Equal(12, loaded.RecordLifetimeHours);
+            Assert.Equal(30, loaded.RepublishIntervalMinutes);
+            store.Save(new ProberSettings { RepublishIntervalMinutes = 12.5 });
+            Assert.Equal(12.5, store.Load().RepublishIntervalMinutes);
+        }
+
         /// <summary>Keys and record codes are recognized and invalid input is explained.</summary>
         /// <returns>Completion after the checks.</returns>
         [Fact]
