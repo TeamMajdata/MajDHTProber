@@ -145,10 +145,10 @@ namespace MajDHTProber.Infrastructure
 
         /// <summary>Formats node capabilities.</summary>
         /// <param name="capabilities">The capabilities.</param>
-        /// <returns>Text such as <c>下载 · 提供 · 中继</c>.</returns>
+        /// <returns>Text such as <c>下载 · 提供 · Traversal · Forwarder</c>.</returns>
         public static string Capabilities(DHTCapabilities capabilities)
         {
-            var parts = new List<string>(3);
+            var parts = new List<string>(4);
             if ((capabilities & DHTCapabilities.Download) != 0)
             {
                 parts.Add("下载");
@@ -157,9 +157,13 @@ namespace MajDHTProber.Infrastructure
             {
                 parts.Add("提供");
             }
-            if ((capabilities & DHTCapabilities.Relay) != 0)
+            if ((capabilities & DHTCapabilities.Traversal) != 0)
             {
-                parts.Add("中继");
+                parts.Add("Traversal");
+            }
+            if ((capabilities & DHTCapabilities.Forwarder) != 0)
+            {
+                parts.Add("Forwarder");
             }
             return parts.Count == 0 ? "无" : string.Join(" · ", parts);
         }
@@ -172,7 +176,7 @@ namespace MajDHTProber.Infrastructure
             return reachability switch
             {
                 DHTReachability.Public => "公网可达",
-                DHTReachability.Private => "私有（经中继）",
+                DHTReachability.Private => "私有（经 Forwarder）",
                 _ => "未知",
             };
         }
@@ -185,29 +189,8 @@ namespace MajDHTProber.Infrastructure
             return transport == DHTTransport.Udp ? "UDP" : "TCP";
         }
 
-        /// <summary>Formats endpoint flags.</summary>
-        /// <param name="flags">The flags.</param>
-        /// <returns>Text such as <c>已验证 · 本地</c>, or <c>未验证</c>.</returns>
-        public static string EndpointFlags(DHTEndpointFlags flags)
-        {
-            var parts = new List<string>(3);
-            if ((flags & DHTEndpointFlags.Verified) != 0)
-            {
-                parts.Add("已验证");
-            }
-            if ((flags & DHTEndpointFlags.Configured) != 0)
-            {
-                parts.Add("已配置");
-            }
-            if ((flags & DHTEndpointFlags.Local) != 0)
-            {
-                parts.Add("本地");
-            }
-            return parts.Count == 0 ? "未验证" : string.Join(" · ", parts);
-        }
-
-        /// <summary>Formats an advertised endpoint with its ports.</summary>
-        /// <param name="endpoint">The advertised endpoint.</param>
+        /// <summary>Formats an observed endpoint with its ports.</summary>
+        /// <param name="endpoint">The observed endpoint.</param>
         /// <returns>Text such as <c>203.0.113.5 · TCP 42000 · UDP 42000</c>.</returns>
         public static string Endpoint(DHTEndpoint endpoint)
         {
@@ -223,19 +206,28 @@ namespace MajDHTProber.Infrastructure
             return text;
         }
 
-        /// <summary>Summarizes where a contact can be reached, for list rows.</summary>
-        /// <param name="peer">The contact.</param>
-        /// <returns>The first advertised endpoint, a relay note for private contacts, or the placeholder.</returns>
+        /// <summary>Summarizes where a node can be reached, for list rows.</summary>
+        /// <param name="peer">The node at its observed endpoints.</param>
+        /// <returns>The most recently observed endpoint, a hint note for nodes without endpoints, or the placeholder.</returns>
         public static string PrimaryAddress(DHTPeer peer)
         {
             if (peer.Endpoints.Count != 0)
             {
-                var first = Endpoint(peer.Endpoints[0]);
-                return peer.Endpoints.Count == 1 ? first : first + "（+" + (peer.Endpoints.Count - 1).ToString(CultureInfo.InvariantCulture) + "）";
+                var latest = Endpoint(peer.Endpoints[peer.Endpoints.Count - 1]);
+                return peer.Endpoints.Count == 1 ? latest : latest + "（+" + (peer.Endpoints.Count - 1).ToString(CultureInfo.InvariantCulture) + "）";
             }
-            return peer.RelayHints.Count != 0
-                ? "经 " + peer.RelayHints.Count.ToString(CultureInfo.InvariantCulture) + " 个中继"
+            return peer.Hints.Count != 0
+                ? "经 " + peer.Hints.Count.ToString(CultureInfo.InvariantCulture) + " 个提示节点"
                 : None;
+        }
+
+        /// <summary>Summarizes a hinted Traversal node or Forwarder for detail lists.</summary>
+        /// <param name="hint">The hinted node at the endpoints its referrer observed.</param>
+        /// <returns>Text such as <c>ab12…cd34 · Traversal · 203.0.113.5 · TCP 42000</c>.</returns>
+        public static string Hint(DHTPeer hint)
+        {
+            return ShortId(hint.NodeId, 8, 4) + " · " + Capabilities(hint.Capabilities & (DHTCapabilities.Traversal | DHTCapabilities.Forwarder))
+                + " · " + PrimaryAddress(hint);
         }
 
         /// <summary>Formats a connection state.</summary>
@@ -261,7 +253,7 @@ namespace MajDHTProber.Infrastructure
             return state switch
             {
                 PeerConnectionState.Connected => "该节点在本节点的路由表中，可作为查找跳点。",
-                PeerConnectionState.Reachable => "最近 5 分钟内认证交互或探测成功，但不在路由表中（如私有节点或未验证端点）。",
+                PeerConnectionState.Reachable => "最近 5 分钟内认证交互或探测成功，但不在路由表中（如私有节点或路由表未接纳）。",
                 PeerConnectionState.Disconnected => "上次成功之后发生过请求失败或探测失败。",
                 PeerConnectionState.Expired => "该节点签名联系人的租期已过期。",
                 _ => "仅通过查找结果或引用得知，尚未与其直接交互。",
@@ -298,9 +290,9 @@ namespace MajDHTProber.Infrastructure
             {
                 parts.Add("探测");
             }
-            if ((sources & PeerSource.RelayHint) != 0)
+            if ((sources & PeerSource.Hint) != 0)
             {
-                parts.Add("中继提示");
+                parts.Add("提示");
             }
             return parts.Count == 0 ? None : string.Join(" · ", parts);
         }

@@ -39,7 +39,7 @@ namespace MajDHTProber.ViewModels
         /// <summary>Gets the block read tool.</summary>
         public BlockToolViewModel Block { get; }
 
-        /// <summary>Gets the relay and hole punching tool.</summary>
+        /// <summary>Gets the NAT traversal tool: Traversal node registration, forwarding sessions and hole punching.</summary>
         public NatToolViewModel Nat { get; }
 
         /// <summary>Gets the end-to-end communication test.</summary>
@@ -84,7 +84,7 @@ namespace MajDHTProber.ViewModels
         /// <summary>Reloads every peer and session choice list.</summary>
         private void ReloadChoices()
         {
-            Block.RefreshRelays();
+            Block.RefreshForwarders();
             Nat.RefreshChoices();
             if (SelectedTabIndex == RoundTripTab || RoundTrip.Targets.Count == 0)
             {

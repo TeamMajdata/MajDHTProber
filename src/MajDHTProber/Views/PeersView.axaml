@@ -39,7 +39,7 @@
                     <StackPanel Spacing="10">
                         <TextBlock Classes="h3" Text="手动添加节点" />
                         <TextBlock Classes="caption"
-                                   Text="当前节点直接向该端点发送签名 Hello（先用所选传输，无应答时在同一端口改用另一种），把应答节点作为已验证联系人加入路由表并经它查找邻居；若它具备中继能力且本节点已启用 NAT 穿透，则同时注册为中继。支持 IP:端口、[IPv6]:端口 和 主机名:端口。" />
+                                   Text="当前节点直接向该端点发送签名 Hello（先用所选传输，无应答时在同一端口改用另一种），把应答节点按观察到的端点加入路由表并经它查找邻居；若它具备 Traversal 或 Forwarder 能力且本节点已启用 NAT 穿透，则同时向它登记。支持 IP:端口、[IPv6]:端口 和 主机名:端口。" />
                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                             <TextBox Classes="mono" Text="{Binding AddEndpointText}" PlaceholderText="例如 192.168.1.20:42000" />
                             <ComboBox Grid.Column="1" Width="120" ItemsSource="{Binding TransportOptions}" SelectedIndex="{Binding AddTransportIndex}" />
@@ -132,7 +132,7 @@
                         <c:LineIcon Data="{StaticResource Icon.Search}" Width="24" Height="24" />
                     </Border>
                     <TextBlock Classes="h3" Text="选择一个节点" HorizontalAlignment="Center" />
-                    <TextBlock Classes="caption" TextAlignment="Center" Text="在左侧列表中选择节点，查看连接状态、通告端点、传输统计，并进行探测、路由探测与打洞。" />
+                    <TextBlock Classes="caption" TextAlignment="Center" Text="在左侧列表中选择节点，查看连接状态、观察到的端点、传输统计，并进行探测、路由探测与打洞。" />
                 </StackPanel>
                 <ScrollViewer IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalScrollBarVisibility="Disabled">
                     <ContentControl Content="{Binding Detail}" Margin="18">
@@ -158,22 +158,28 @@
                                     </StackPanel>
 
                                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
-                                        <Button Classes="accent" Command="{Binding ProbeCommand}" ToolTip.Tip="以独立探针身份对每个通告端点分别做 TCP / UDP 签名 Hello + 加密 Ping">
+                                        <Button Classes="accent" Command="{Binding ProbeCommand}" ToolTip.Tip="以独立探针身份对每个观察到的端点分别做 TCP / UDP 签名 Hello + 加密 Ping">
                                             <StackPanel Orientation="Horizontal" Spacing="7">
                                                 <c:LineIcon Data="{StaticResource Icon.Radar}" />
                                                 <TextBlock Text="探测端点" />
                                             </StackPanel>
                                         </Button>
-                                        <Button Command="{Binding CheckRouteCommand}" ToolTip.Tip="经本节点自己的路由（含中继回退）查找该节点 ID">
+                                        <Button Command="{Binding CheckRouteCommand}" ToolTip.Tip="经本节点自己的路由（含打洞与 Forwarder 回退）查找该节点 ID">
                                             <StackPanel Orientation="Horizontal" Spacing="7">
                                                 <c:LineIcon Data="{StaticResource Icon.Globe}" />
                                                 <TextBlock Text="路由探测" />
                                             </StackPanel>
                                         </Button>
-                                        <Button Command="{Binding RegisterRelayCommand}" IsVisible="{Binding Item.IsRelay}" ToolTip.Tip="在该节点注册本节点的映射，用于打洞与中继">
+                                        <Button Command="{Binding RegisterTraversalCommand}" IsVisible="{Binding Item.IsTraversal}" ToolTip.Tip="在该 Traversal 节点登记本节点被观察到的端点，用于打洞与可达性回拨">
                                             <StackPanel Orientation="Horizontal" Spacing="7">
                                                 <c:LineIcon Data="{StaticResource Icon.Relay}" />
-                                                <TextBlock Text="注册为中继" />
+                                                <TextBlock Text="登记 Traversal" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Command="{Binding RegisterForwarderCommand}" IsVisible="{Binding Item.IsForwarder}" ToolTip.Tip="与该 Forwarder 建立转发会话，使其他节点能经它联系本节点">
+                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                <c:LineIcon Data="{StaticResource Icon.Relay}" />
+                                                <TextBlock Text="建立转发会话" />
                                             </StackPanel>
                                         </Button>
                                         <Button Command="{Binding CopyEndpointCommand}" IsVisible="{Binding !HasNoEndpoints}">
@@ -194,40 +200,39 @@
                                     <ContentControl Content="{Binding ActionResult}" />
 
                                     <Border Classes="subtle" Padding="14,12">
-                                        <Grid ColumnDefinitions="92,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+                                        <Grid ColumnDefinitions="92,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
                                             <TextBlock Classes="field" Text="能力" />
                                             <TextBlock Grid.Column="1" Classes="value" Text="{Binding Item.CapabilitiesText}" />
                                             <TextBlock Grid.Row="1" Classes="field" Text="可达性" />
                                             <TextBlock Grid.Row="1" Grid.Column="1" Classes="value" Text="{Binding Item.ReachabilityText}" />
                                             <TextBlock Grid.Row="2" Classes="field" Text="路由表" />
                                             <TextBlock Grid.Row="2" Grid.Column="1" Classes="value" Text="{Binding RoutingText}" />
-                                            <TextBlock Grid.Row="3" Classes="field" Text="外部地址" />
-                                            <TextBlock Grid.Row="3" Grid.Column="1" Classes="value mono" Text="{Binding ExternalAddressText}" />
-                                            <TextBlock Grid.Row="4" Classes="field" Text="NAT 映射" />
-                                            <TextBlock Grid.Row="4" Grid.Column="1" Classes="value" Text="{Binding MappingText}" />
-                                            <TextBlock Grid.Row="5" Classes="field" Text="身份工作量" />
-                                            <TextBlock Grid.Row="5" Grid.Column="1" Classes="value" Text="{Binding IdentityWorkText}" />
-                                            <TextBlock Grid.Row="6" Classes="field" Text="联系人" />
-                                            <TextBlock Grid.Row="6" Grid.Column="1" Classes="value" Text="{Binding LeaseText}" />
-                                            <TextBlock Grid.Row="7" Classes="field" Text="来源" />
-                                            <TextBlock Grid.Row="7" Grid.Column="1" Classes="value" Text="{Binding Item.SourcesText}" />
-                                            <TextBlock Grid.Row="8" Classes="field" Text="首次发现" />
-                                            <TextBlock Grid.Row="8" Grid.Column="1" Classes="value" Text="{Binding FirstSeenText}" />
-                                            <TextBlock Grid.Row="9" Classes="field" Text="最后交互" />
-                                            <TextBlock Grid.Row="9" Grid.Column="1" Classes="value" Text="{Binding LastInteractionText}" />
-                                            <TextBlock Grid.Row="10" Classes="field" Text="最后失败" />
-                                            <TextBlock Grid.Row="10" Grid.Column="1" Classes="value" Text="{Binding LastFailureText}" />
-                                            <TextBlock Grid.Row="11" Classes="field" Text="验证地址" />
-                                            <TextBlock Grid.Row="11" Grid.Column="1" Classes="value mono" Text="{Binding VerifiedAddressText}" />
-                                            <TextBlock Grid.Row="12" Classes="field" Text="最近探测" />
-                                            <TextBlock Grid.Row="12" Grid.Column="1" Classes="value" Text="{Binding LastProbeText}" />
+                                            <TextBlock Grid.Row="3" Classes="field" Text="NAT 映射" />
+                                            <TextBlock Grid.Row="3" Grid.Column="1" Classes="value" Text="{Binding MappingText}" />
+                                            <TextBlock Grid.Row="4" Classes="field" Text="身份工作量" />
+                                            <TextBlock Grid.Row="4" Grid.Column="1" Classes="value" Text="{Binding IdentityWorkText}" />
+                                            <TextBlock Grid.Row="5" Classes="field" Text="联系人" />
+                                            <TextBlock Grid.Row="5" Grid.Column="1" Classes="value" Text="{Binding LeaseText}" />
+                                            <TextBlock Grid.Row="6" Classes="field" Text="来源" />
+                                            <TextBlock Grid.Row="6" Grid.Column="1" Classes="value" Text="{Binding Item.SourcesText}" />
+                                            <TextBlock Grid.Row="7" Classes="field" Text="首次发现" />
+                                            <TextBlock Grid.Row="7" Grid.Column="1" Classes="value" Text="{Binding FirstSeenText}" />
+                                            <TextBlock Grid.Row="8" Classes="field" Text="最后交互" />
+                                            <TextBlock Grid.Row="8" Grid.Column="1" Classes="value" Text="{Binding LastInteractionText}" />
+                                            <TextBlock Grid.Row="9" Classes="field" Text="最后失败" />
+                                            <TextBlock Grid.Row="9" Grid.Column="1" Classes="value" Text="{Binding LastFailureText}" />
+                                            <TextBlock Grid.Row="10" Classes="field" Text="本节点观察" ToolTip.Tip="本节点自己最近一次与它交换已认证数据包的端点" />
+                                            <TextBlock Grid.Row="10" Grid.Column="1" Classes="value mono" Text="{Binding ObservedEndpointText}" />
+                                            <TextBlock Grid.Row="11" Classes="field" Text="最近探测" />
+                                            <TextBlock Grid.Row="11" Grid.Column="1" Classes="value" Text="{Binding LastProbeText}" />
                                         </Grid>
                                     </Border>
 
                                     <StackPanel Spacing="8">
-                                        <TextBlock Classes="h3" Text="通告端点" />
+                                        <TextBlock Classes="h3" Text="观察到的端点" />
+                                        <TextBlock Classes="caption" Text="本节点或引荐它的节点从实际数据包中观察到的端点；联系人本身不携带端点。" />
                                         <TextBlock Classes="caption" IsVisible="{Binding HasNoEndpoints}"
-                                                   Text="未通告端点：该节点为私有节点或尚未确认可达性，只能经中继访问。" />
+                                                   Text="尚未观察到端点：该节点为私有节点，或只经 Forwarder 应答过，只能经它提示的 Forwarder 访问。" />
                                         <ItemsControl ItemsSource="{Binding Endpoints}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:EndpointRowViewModel">
@@ -238,17 +243,14 @@
                                                                        Text="{Binding TcpText, StringFormat='TCP {0}'}" />
                                                             <TextBlock Classes="cell mono" Foreground="{DynamicResource TextSecondaryBrush}"
                                                                        Text="{Binding UdpText, StringFormat='UDP {0}'}" />
-                                                            <Border Classes="pill" Classes.success="{Binding IsVerified}">
-                                                                <TextBlock Text="{Binding FlagsText}" />
-                                                            </Border>
                                                         </StackPanel>
                                                     </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
-                                        <StackPanel Spacing="4" IsVisible="{Binding !!RelayHints.Count}">
-                                            <TextBlock Classes="label" Text="中继提示" />
-                                            <ItemsControl ItemsSource="{Binding RelayHints}">
+                                        <StackPanel Spacing="4" IsVisible="{Binding !!Hints.Count}">
+                                            <TextBlock Classes="label" Text="提示的 Traversal 节点与 Forwarder" />
+                                            <ItemsControl ItemsSource="{Binding Hints}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="x:String">
                                                         <SelectableTextBlock Classes="mono muted" FontSize="12" Text="{Binding}" />
@@ -307,11 +309,11 @@
 
                                     <Border Classes="subtle" Padding="14,12">
                                         <StackPanel Spacing="8">
-                                            <TextBlock Classes="h3" Text="经中继打洞" />
-                                            <TextBlock Classes="caption" Text="请求中继同时介绍双方并探测直连路径。双方都需已在同一中继注册，且本节点需有对应协议的监听端口。" />
+                                            <TextBlock Classes="h3" Text="经 Traversal 节点打洞" />
+                                            <TextBlock Classes="caption" Text="请求 Traversal 节点同时引介双方并探测直连路径。双方都需已在同一 Traversal 节点登记，且本节点需有对应协议的监听端口。" />
                                             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                                                <ComboBox ItemsSource="{Binding RelayCandidates}" SelectedItem="{Binding SelectedRelay}" HorizontalAlignment="Stretch"
-                                                          PlaceholderText="选择中继节点">
+                                                <ComboBox ItemsSource="{Binding TraversalCandidates}" SelectedItem="{Binding SelectedTraversal}" HorizontalAlignment="Stretch"
+                                                          PlaceholderText="选择 Traversal 节点">
                                                     <ComboBox.ItemTemplate>
                                                         <DataTemplate x:DataType="vm:PeerItemViewModel">
                                                             <TextBlock Classes="mono" Text="{Binding Title}" />

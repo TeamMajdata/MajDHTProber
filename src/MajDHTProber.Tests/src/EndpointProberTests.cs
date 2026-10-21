@@ -40,6 +40,7 @@ namespace MajDHTProber.Tests
             Assert.Equal(transport, result.Transport);
             Assert.Equal(target.NodeId, result.NodeId);
             Assert.Equal(target.NodeId, result.Peer?.NodeId);
+            Assert.True(result.Peer!.WasObservedAt(transport, endpoint));
             Assert.NotNull(result.HelloRoundTrip);
             Assert.NotNull(result.PingRoundTrip);
             Assert.Equal(IPAddress.Loopback, result.ObservedEndpoint?.Address);

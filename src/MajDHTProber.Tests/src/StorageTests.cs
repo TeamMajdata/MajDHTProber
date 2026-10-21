@@ -96,7 +96,9 @@ namespace MajDHTProber.Tests
             {
                 ListenAddresses = "0.0.0.0, ::",
                 PreferredTransport = DHTTransport.Udp,
-                CapabilityRelay = true,
+                PubliclyReachable = true,
+                CapabilityTraversal = true,
+                CapabilityForwarder = true,
                 PersistRoutingTable = false,
                 BootstrapEndpoints = { "127.0.0.1:42000" },
                 MinimumLogLevel = LogLevel.Debug,
@@ -108,7 +110,9 @@ namespace MajDHTProber.Tests
 
             Assert.Equal("0.0.0.0, ::", loaded.ListenAddresses);
             Assert.Equal(DHTTransport.Udp, loaded.PreferredTransport);
-            Assert.True(loaded.CapabilityRelay);
+            Assert.True(loaded.PubliclyReachable);
+            Assert.True(loaded.CapabilityTraversal);
+            Assert.True(loaded.CapabilityForwarder);
             Assert.False(loaded.PersistRoutingTable);
             Assert.Equal(new[] { "127.0.0.1:42000" }, loaded.BootstrapEndpoints);
             Assert.Equal(LogLevel.Debug, loaded.MinimumLogLevel);

@@ -19,8 +19,12 @@ namespace MajDHTProber.Models
         /// <summary>Gets or sets one or two comma-separated listen addresses, at most one per address family.</summary>
         public string ListenAddresses { get; set; } = "0.0.0.0";
 
-        /// <summary>Gets or sets up to four comma-separated advertised addresses; empty discovers reachability automatically.</summary>
-        public string AdvertisedAddresses { get; set; } = string.Empty;
+        /// <summary>
+        /// Gets or sets whether the listeners are known to accept unsolicited packets from other networks, such as on a fixed
+        /// public address or behind a router port mapping; the node then advertises public reachability at once instead of
+        /// discovering it through dial-backs.
+        /// </summary>
+        public bool PubliclyReachable { get; set; }
 
         /// <summary>Gets or sets whether the TCP listener is enabled.</summary>
         public bool TcpEnabled { get; set; } = true;
@@ -43,8 +47,11 @@ namespace MajDHTProber.Models
         /// <summary>Gets or sets whether the node advertises and enforces the provide capability.</summary>
         public bool CapabilityProvide { get; set; } = true;
 
-        /// <summary>Gets or sets whether the node advertises and enforces the relay capability.</summary>
-        public bool CapabilityRelay { get; set; }
+        /// <summary>Gets or sets whether the node acts as a Traversal node that coordinates direct connections and dial-backs.</summary>
+        public bool CapabilityTraversal { get; set; }
+
+        /// <summary>Gets or sets whether the node acts as a Forwarder that relays encrypted envelopes between peers.</summary>
+        public bool CapabilityForwarder { get; set; }
 
         /// <summary>Gets or sets the bootstrap endpoints in <c>host:port</c> form; at most sixteen are used.</summary>
         public List<string> BootstrapEndpoints { get; set; } = new List<string>();
@@ -61,7 +68,9 @@ namespace MajDHTProber.Models
         /// </summary>
         public bool PersistRoutingTable { get; set; } = true;
 
-        /// <summary>Gets or sets whether relay registration, reachability checks and hole punching are enabled.</summary>
+        /// <summary>
+        /// Gets or sets whether traversal registration, forwarding sessions, reachability checks and hole punching are enabled.
+        /// </summary>
         public bool EnableNatTraversal { get; set; } = true;
 
         /// <summary>Gets or sets the timeout of each transport attempt in seconds.</summary>
@@ -103,9 +112,13 @@ namespace MajDHTProber.Models
                 {
                     capabilities |= DHTCapabilities.Provide;
                 }
-                if (CapabilityRelay)
+                if (CapabilityTraversal)
                 {
-                    capabilities |= DHTCapabilities.Relay;
+                    capabilities |= DHTCapabilities.Traversal;
+                }
+                if (CapabilityForwarder)
+                {
+                    capabilities |= DHTCapabilities.Forwarder;
                 }
                 return capabilities;
             }

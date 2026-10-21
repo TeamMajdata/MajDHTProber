@@ -59,7 +59,8 @@ namespace MajDHTProber.Tests
             store.Save(TestNodes.LoopbackSettings());
             using var vault = new IdentityVault(null, sink.CreateLogger("身份"));
             var manager = new NodeSessionManager(store, vault, sink);
-            await using var remote = await TestNodes.StartAsync(DHTCapabilities.Download | DHTCapabilities.Provide | DHTCapabilities.Relay);
+            await using var remote = await TestNodes.StartAsync(DHTCapabilities.Download | DHTCapabilities.Provide | DHTCapabilities.Traversal
+                | DHTCapabilities.Forwarder);
             var viewModel = new MainWindowViewModel(manager, new AvaloniaUiDispatcher(), new NullUserInteraction());
             var window = new MainWindow { DataContext = viewModel, Width = 1440, Height = 900 };
             try

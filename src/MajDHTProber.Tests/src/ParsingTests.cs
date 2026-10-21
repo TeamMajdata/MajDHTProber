@@ -80,12 +80,21 @@ namespace MajDHTProber.Tests
         [Fact]
         public void MapsListenersAndCapabilities()
         {
-            var settings = new ProberSettings { UdpEnabled = false, CapabilityRelay = true, CapabilityDownload = false };
+            var settings = new ProberSettings
+            {
+                UdpEnabled = false,
+                CapabilityTraversal = true,
+                CapabilityForwarder = true,
+                CapabilityDownload = false,
+                PubliclyReachable = true,
+            };
 
             var options = NodeOptionsBuilder.Build(settings, NullLogger.Instance);
 
             Assert.Null(options.UdpPort);
-            Assert.Equal(DHTCapabilities.Provide | DHTCapabilities.Relay, options.Capabilities);
+            Assert.Equal(DHTCapabilities.Provide | DHTCapabilities.Traversal | DHTCapabilities.Forwarder, options.Capabilities);
+            Assert.True(options.PubliclyReachable);
+            Assert.False(NodeOptionsBuilder.Build(new ProberSettings(), NullLogger.Instance).PubliclyReachable);
         }
 
         /// <summary>Every invalid field is reported at once.</summary>
@@ -95,7 +104,6 @@ namespace MajDHTProber.Tests
             var settings = new ProberSettings
             {
                 ListenAddresses = "0.0.0.0, 10.0.0.1",
-                AdvertisedAddresses = "::1",
                 TcpEnabled = false,
                 UdpEnabled = false,
                 IdentityWorkBits = 21,
@@ -108,7 +116,6 @@ namespace MajDHTProber.Tests
 
             Assert.Equal(errors.Count, exception.Errors.Count);
             Assert.Contains(errors, error => error.Contains("每种地址族", StringComparison.Ordinal));
-            Assert.Contains(errors, error => error.Contains("通告地址 ::1", StringComparison.Ordinal));
             Assert.Contains(errors, error => error.Contains("至少需要启用一个", StringComparison.Ordinal));
             Assert.Contains(errors, error => error.Contains("身份工作量", StringComparison.Ordinal));
             Assert.Contains(errors, error => error.Contains("块大小", StringComparison.Ordinal));
@@ -119,17 +126,18 @@ namespace MajDHTProber.Tests
         [Fact]
         public void DerivesLocalNodeSettings()
         {
-            var primary = new ProberSettings { IdentityWorkBits = 8, RequestTimeoutSeconds = 3, BlockSize = 4096 };
+            var primary = new ProberSettings { IdentityWorkBits = 8, RequestTimeoutSeconds = 3, BlockSize = 4096, PubliclyReachable = true };
             var bootstrap = new[] { new IPEndPoint(IPAddress.Loopback, 42000) };
 
-            var local = NodeSessionManager.DeriveLocalSettings(primary, bootstrap, new LocalNodeRequest { Capabilities = DHTCapabilities.Relay });
+            var local = NodeSessionManager.DeriveLocalSettings(primary, bootstrap, new LocalNodeRequest { Capabilities = DHTCapabilities.Forwarder });
 
             Assert.Equal("127.0.0.1", local.ListenAddresses);
+            Assert.False(local.PubliclyReachable);
             Assert.Equal(0, local.TcpPort);
             Assert.Equal(0, local.UdpPort);
             Assert.Equal(8, local.IdentityWorkBits);
             Assert.Equal(4096, local.BlockSize);
-            Assert.Equal(DHTCapabilities.Relay, local.Capabilities);
+            Assert.Equal(DHTCapabilities.Forwarder, local.Capabilities);
             Assert.Equal(new[] { "127.0.0.1:42000" }, local.BootstrapEndpoints);
             Assert.False(local.PersistRoutingTable);
             Assert.Empty(NodeOptionsBuilder.Validate(local));

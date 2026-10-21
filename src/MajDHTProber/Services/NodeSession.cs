@@ -320,8 +320,8 @@ namespace MajDHTProber.Services
             await StopAsync().ConfigureAwait(false);
         }
 
-        /// <summary>Returns the running node's signed contact.</summary>
-        /// <returns>The contact, or null when the node is not running.</returns>
+        /// <summary>Returns the running node's signed contact paired with the endpoints it listens on.</summary>
+        /// <returns>The local peer, or null when the node is not running.</returns>
         public DHTPeer? TryGetLocalPeer()
         {
             var node = TryGetNode();
@@ -341,10 +341,10 @@ namespace MajDHTProber.Services
 
         /// <summary>
         /// Returns endpoints at which other nodes, including nodes hosted by this process, can contact this node: the
-        /// advertised endpoints, or the loopback address for wildcard listeners on configured ports.
+        /// listener endpoints, with wildcard listeners represented by their loopback address.
         /// </summary>
         /// <param name="transport">The transport whose port is used, or null for the preferred transport.</param>
-        /// <returns>The contact endpoints; empty when the node is stopped or listens on assigned wildcard ports.</returns>
+        /// <returns>The contact endpoints; empty when the node is stopped.</returns>
         public IReadOnlyList<IPEndPoint> GetContactEndpoints(DHTTransport? transport = null)
         {
             var result = new List<IPEndPoint>();
@@ -353,8 +353,7 @@ namespace MajDHTProber.Services
             {
                 return result;
             }
-            var settings = Settings;
-            var selected = transport ?? settings.PreferredTransport;
+            var selected = transport ?? Settings.PreferredTransport;
             foreach (var endpoint in local.Endpoints)
             {
                 var port = PortFor(endpoint, selected);
@@ -363,29 +362,14 @@ namespace MajDHTProber.Services
                     result.Add(new IPEndPoint(endpoint.Address, port));
                 }
             }
-            if (result.Count != 0)
-            {
-                return result;
-            }
-            var configuredPort = selected == DHTTransport.Udp
-                ? (settings.UdpEnabled ? settings.UdpPort : 0)
-                : (settings.TcpEnabled ? settings.TcpPort : 0);
-            if (configuredPort == 0)
-            {
-                configuredPort = selected == DHTTransport.Udp
-                    ? (settings.TcpEnabled ? settings.TcpPort : 0)
-                    : (settings.UdpEnabled ? settings.UdpPort : 0);
-            }
-            if (configuredPort == 0)
-            {
-                return result;
-            }
-            foreach (var address in NodeOptionsBuilder.ParseAddressList(settings.ListenAddresses, string.Empty, true, new List<string>()))
-            {
-                var reachable = address.Equals(IPAddress.Any) ? IPAddress.Loopback : address.Equals(IPAddress.IPv6Any) ? IPAddress.IPv6Loopback : address;
-                result.Add(new IPEndPoint(reachable, configuredPort));
-            }
             return result;
+        }
+
+        /// <summary>Returns the external addresses of the running node that independent observers confirmed.</summary>
+        /// <returns>At most one address per address family; empty when unconfirmed or when the node is stopped.</returns>
+        public IReadOnlyList<IPAddress> GetExternalAddresses()
+        {
+            return TryGetNode()?.ExternalAddresses ?? Array.Empty<IPAddress>();
         }
 
         /// <summary>Contacts every configured bootstrap endpoint and runs a neighbor lookup.</summary>
@@ -454,8 +438,8 @@ namespace MajDHTProber.Services
 
         /// <summary>
         /// Adds a node by endpoint through the hosted node's own signed Hello exchange: the node that answers is admitted to
-        /// the routing table, registered as relay when it offers relay assistance and NAT traversal is enabled, and used
-        /// for a neighbor lookup, exactly like a bootstrap endpoint.
+        /// the routing table, registered with as Traversal node or Forwarder when it offers that assistance and NAT
+        /// traversal is enabled, and used for a neighbor lookup, exactly like a bootstrap endpoint.
         /// </summary>
         /// <param name="endpoint">The node's endpoint.</param>
         /// <param name="options">The add options.</param>
@@ -487,20 +471,20 @@ namespace MajDHTProber.Services
                 return new AddPeerResult { Endpoint = endpoint, Elapsed = stopwatch.Elapsed, Note = failure };
             }
             stopwatch.Stop();
-            var admitted = RecordContactedPeer(peer, endpoint.Address, PeerSource.Manual);
+            var admitted = RecordContactedPeer(peer, PeerSource.Manual);
             var routingTableSize = RoutingTable?.Snapshot().Count ?? 0;
             string? note = null;
             if (peer.Reachability == DHTReachability.Private)
             {
-                note = "该节点声明自己为私有节点，只能经中继访问，无法加入路由表，但它仍会出现在节点列表中。";
+                note = "该节点声明自己为私有节点，只能经 Forwarder 访问，无法加入路由表，但它仍会出现在节点列表中。";
             }
             else if (!admitted)
             {
                 note = "路由表未接纳该节点（桶已满、网段限额或联系人已过期），但它仍会出现在节点列表中。";
             }
-            if ((peer.Capabilities & DHTCapabilities.Relay) != 0 && !Settings.EnableNatTraversal)
+            if ((peer.Capabilities & (DHTCapabilities.Traversal | DHTCapabilities.Forwarder)) != 0 && !Settings.EnableNatTraversal)
             {
-                note = AppendNote(note, "该节点具备中继能力，但本节点未启用 NAT 穿透，未注册中继。");
+                note = AppendNote(note, "该节点具备 Traversal 或 Forwarder 能力，但本节点未启用 NAT 穿透，未向它登记。");
             }
             _logger.LogInformation("手动添加节点：{NodeId}（{Endpoint}）{Admission}，邻居查找后路由表共 {Count} 个节点，耗时 {Elapsed}。",
                 Display.ShortId(peer.NodeId), target, admitted ? "已加入路由表" : "未被路由表接纳", routingTableSize, Display.Duration(stopwatch.Elapsed));
@@ -536,7 +520,7 @@ namespace MajDHTProber.Services
             try
             {
                 var peer = await node.AddPeerAsync(endpoint, null, cancellationToken).ConfigureAwait(false);
-                var admitted = RecordContactedPeer(peer, endpoint.Address, PeerSource.LocalNode);
+                var admitted = RecordContactedPeer(peer, PeerSource.LocalNode);
                 if (peer.NodeId == expected)
                 {
                     Peers.SetLabel(peer.NodeId, other.Label);
@@ -574,16 +558,16 @@ namespace MajDHTProber.Services
             return result;
         }
 
-        /// <summary>Probes every advertised endpoint and transport of a known peer in parallel and remembers the outcome.</summary>
+        /// <summary>Probes every observed endpoint and transport of a known peer in parallel and remembers the outcome.</summary>
         /// <param name="peer">The peer.</param>
         /// <param name="cancellationToken">Cancels the probes.</param>
-        /// <returns>One result per endpoint and transport; empty when the peer advertises no endpoint.</returns>
+        /// <returns>One result per endpoint and transport; empty when no endpoint was observed for the peer.</returns>
         /// <exception cref="OperationCanceledException">The probes were cancelled.</exception>
         public async Task<IReadOnlyList<EndpointProbeResult>> ProbePeerAsync(PeerSnapshot peer, CancellationToken cancellationToken = default)
         {
             var probes = new List<Task<EndpointProbeResult>>();
             var options = ProbeOptions.From(Settings);
-            foreach (var endpoint in peer.Contact.Endpoints)
+            foreach (var endpoint in peer.Peer.Endpoints)
             {
                 if (endpoint.TcpPort != 0)
                 {
@@ -596,7 +580,7 @@ namespace MajDHTProber.Services
             }
             if (probes.Count == 0)
             {
-                _logger.LogInformation("节点 {NodeId} 未通告任何端点，无法直接探测。", Display.ShortId(peer.NodeId));
+                _logger.LogInformation("节点 {NodeId} 没有已观察到的端点，无法直接探测。", Display.ShortId(peer.NodeId));
                 return Array.Empty<EndpointProbeResult>();
             }
             var results = await Task.WhenAll(probes).ConfigureAwait(false);
@@ -644,34 +628,50 @@ namespace MajDHTProber.Services
             };
         }
 
-        /// <summary>Registers this node's endpoints with a relay.</summary>
-        /// <param name="relay">A contact advertising relay capability.</param>
+        /// <summary>Registers this node's observed endpoints with a Traversal node and keeps the registration alive.</summary>
+        /// <param name="traversal">A peer advertising the Traversal capability at its observed endpoints.</param>
         /// <param name="cancellationToken">Cancels the initial registration.</param>
         /// <returns>Completion after registration.</returns>
         /// <exception cref="InvalidOperationException">The node is not running or NAT traversal is disabled.</exception>
-        /// <exception cref="ArgumentException">The contact cannot provide rendezvous assistance.</exception>
-        /// <exception cref="IOException">No transport could register.</exception>
-        public Task RegisterRelayAsync(DHTPeer relay, CancellationToken cancellationToken = default)
+        /// <exception cref="ArgumentException">The peer cannot coordinate traversal or has no observed endpoint.</exception>
+        /// <exception cref="IOException">No transport could register or the Traversal node limit was reached.</exception>
+        public Task RegisterTraversalAsync(DHTPeer traversal, CancellationToken cancellationToken = default)
         {
-            return RunAsync("注册中继", Display.ShortId(relay.NodeId), async node =>
+            return RunAsync("登记 Traversal 节点", Display.ShortId(traversal.NodeId), async node =>
             {
-                await node.RegisterRelayAsync(relay, cancellationToken).ConfigureAwait(false);
+                await node.RegisterTraversalAsync(traversal, cancellationToken).ConfigureAwait(false);
                 return true;
             });
         }
 
-        /// <summary>Asks a relay to introduce this node and a peer and attempts a direct connection.</summary>
-        /// <param name="peer">The peer, which must be registered with the relay.</param>
-        /// <param name="relay">The common relay.</param>
+        /// <summary>Opens a forwarding session with a Forwarder and keeps it alive, so it can deliver traffic to this node.</summary>
+        /// <param name="forwarder">A peer advertising the Forwarder capability at its observed endpoints.</param>
+        /// <param name="cancellationToken">Cancels the initial session.</param>
+        /// <returns>Completion after the session opened.</returns>
+        /// <exception cref="InvalidOperationException">The node is not running or NAT traversal is disabled.</exception>
+        /// <exception cref="ArgumentException">The peer does not forward traffic or has no observed endpoint.</exception>
+        /// <exception cref="IOException">No transport opened a session or the Forwarder limit was reached.</exception>
+        public Task RegisterForwarderAsync(DHTPeer forwarder, CancellationToken cancellationToken = default)
+        {
+            return RunAsync("建立转发会话", Display.ShortId(forwarder.NodeId), async node =>
+            {
+                await node.RegisterForwarderAsync(forwarder, cancellationToken).ConfigureAwait(false);
+                return true;
+            });
+        }
+
+        /// <summary>Asks a Traversal node to introduce this node and a peer and attempts a direct connection.</summary>
+        /// <param name="peer">The peer, which must be registered with the Traversal node.</param>
+        /// <param name="traversal">The common Traversal node.</param>
         /// <param name="transport">The transport to punch.</param>
         /// <param name="cancellationToken">Cancels the attempt.</param>
         /// <returns>Whether a direct route was authenticated.</returns>
         /// <exception cref="InvalidOperationException">The node is not running.</exception>
-        /// <exception cref="ArgumentException">The peer, relay or transport is invalid.</exception>
-        public Task<bool> TryPunchAsync(DHTPeer peer, DHTPeer relay, DHTTransport transport, CancellationToken cancellationToken = default)
+        /// <exception cref="ArgumentException">The peer, Traversal node or transport is invalid.</exception>
+        public Task<bool> TryPunchAsync(DHTPeer peer, DHTPeer traversal, DHTTransport transport, CancellationToken cancellationToken = default)
         {
-            return RunAsync("打洞（" + Display.Transport(transport) + "）", Display.ShortId(peer.NodeId) + " 经 " + Display.ShortId(relay.NodeId),
-                node => node.TryPunchAsync(peer, relay, transport, cancellationToken), success => success ? "已建立直连" : "未能建立直连");
+            return RunAsync("打洞（" + Display.Transport(transport) + "）", Display.ShortId(peer.NodeId) + " 经 " + Display.ShortId(traversal.NodeId),
+                node => node.TryPunchAsync(peer, traversal, transport, cancellationToken), success => success ? "已建立直连" : "未能建立直连");
         }
 
         /// <summary>Publishes content under this node's publisher namespace.</summary>
@@ -855,22 +855,23 @@ namespace MajDHTProber.Services
             return downloaded;
         }
 
-        /// <summary>Reads and verifies one block from a specific provider, optionally through a relay.</summary>
+        /// <summary>Reads and verifies one block from a specific provider, optionally through a Forwarder.</summary>
         /// <param name="record">The signed record.</param>
         /// <param name="provider">The provider.</param>
         /// <param name="index">The zero-based block index.</param>
-        /// <param name="relay">An optional relay, or null for direct access with automatic fallback.</param>
+        /// <param name="forwarder">An optional Forwarder, or null for direct access with automatic fallback.</param>
         /// <param name="cancellationToken">Cancels the transfer.</param>
         /// <returns>The verified block.</returns>
         /// <exception cref="InvalidOperationException">The node is not running or cannot download.</exception>
         /// <exception cref="ArgumentOutOfRangeException">The index is outside the file.</exception>
         /// <exception cref="InvalidDataException">The block failed verification.</exception>
-        /// <exception cref="IOException">The provider or relay is unavailable.</exception>
-        public Task<ReadOnlyMemory<byte>> ReadBlockAsync(DHTRecord record, DHTPeer provider, int index, DHTPeer? relay = null,
+        /// <exception cref="IOException">The provider or Forwarder is unavailable.</exception>
+        public Task<ReadOnlyMemory<byte>> ReadBlockAsync(DHTRecord record, DHTPeer provider, int index, DHTPeer? forwarder = null,
             CancellationToken cancellationToken = default)
         {
-            var target = "块 " + index + " @ " + Display.ShortId(provider.NodeId) + (relay == null ? string.Empty : " 经 " + Display.ShortId(relay.NodeId));
-            return RunAsync("读取块", target, node => node.ReadBlockAsync(record, provider, index, relay, cancellationToken),
+            var target = "块 " + index + " @ " + Display.ShortId(provider.NodeId)
+                + (forwarder == null ? string.Empty : " 经 " + Display.ShortId(forwarder.NodeId));
+            return RunAsync("读取块", target, node => node.ReadBlockAsync(record, provider, index, forwarder, cancellationToken),
                 block => Display.Bytes(block.Length));
         }
 
@@ -920,10 +921,10 @@ namespace MajDHTProber.Services
             Peers.ReconcileRouting(routed);
         }
 
-        /// <summary>Gets the port of an advertised endpoint for a transport, falling back to the other transport.</summary>
-        /// <param name="endpoint">The advertised endpoint.</param>
+        /// <summary>Gets the port of an endpoint for a transport, falling back to the other transport.</summary>
+        /// <param name="endpoint">The endpoint.</param>
         /// <param name="transport">The transport.</param>
-        /// <returns>The port, or zero when neither transport is advertised.</returns>
+        /// <returns>The port, or zero when the endpoint has no port for either transport.</returns>
         private static int PortFor(DHTEndpoint endpoint, DHTTransport transport)
         {
             var primary = transport == DHTTransport.Udp ? endpoint.UdpPort : endpoint.TcpPort;
@@ -973,16 +974,16 @@ namespace MajDHTProber.Services
             return false;
         }
 
-        /// <summary>Records a contact the hosted node just authenticated at an address and aligns the routing flags.</summary>
-        /// <param name="peer">The authenticated contact.</param>
-        /// <param name="address">The address at which it answered.</param>
+        /// <summary>Records a contact the hosted node just authenticated at its observed endpoint and aligns the routing flags.</summary>
+        /// <param name="peer">The authenticated contact at the endpoint that answered the hosted node.</param>
         /// <param name="source">How the contact was learned.</param>
         /// <returns>Whether the contact is a routing table entry.</returns>
-        private bool RecordContactedPeer(DHTPeer peer, IPAddress address, PeerSource source)
+        private bool RecordContactedPeer(DHTPeer peer, PeerSource source)
         {
             var table = RoutingTable;
             var admitted = table != null && table.Contains(peer.NodeId);
-            Peers.Observe(peer, source, admitted, address, interaction: true);
+            var observed = peer.Endpoints.Count == 0 ? null : peer.Endpoints[peer.Endpoints.Count - 1];
+            Peers.Observe(peer, source, admitted, observed, interaction: true);
             RefreshRoutingState();
             return admitted;
         }
@@ -1146,10 +1147,10 @@ namespace MajDHTProber.Services
                 // The prober's own probes and short-lived clients contact hosted nodes too, but they are not members of the probed network.
                 return;
             }
-            Peers.Observe(observation.Peer, PeerSource.Routing, observation.InTable, observation.VerifiedAddress, interaction: true);
-            foreach (var hint in observation.Peer.RelayHints)
+            Peers.Observe(observation.Peer, PeerSource.Routing, observation.InTable, observation.Observed, interaction: true);
+            foreach (var hint in observation.Peer.Hints)
             {
-                Peers.Observe(hint, PeerSource.RelayHint);
+                Peers.Observe(hint, PeerSource.Hint);
             }
         }
 

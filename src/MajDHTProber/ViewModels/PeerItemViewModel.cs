@@ -67,9 +67,13 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial string LossText { get; set; } = Display.None;
 
-        /// <summary>Gets or sets whether the peer offers relay assistance.</summary>
+        /// <summary>Gets or sets whether the peer coordinates traversal, so the active node can register with it and punch through it.</summary>
         [ObservableProperty]
-        public partial bool IsRelay { get; set; }
+        public partial bool IsTraversal { get; set; }
+
+        /// <summary>Gets or sets whether the peer forwards traffic, so the active node can open a forwarding session with it.</summary>
+        [ObservableProperty]
+        public partial bool IsForwarder { get; set; }
 
         /// <summary>Gets or sets whether the user added the peer manually.</summary>
         [ObservableProperty]
@@ -79,8 +83,8 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial bool IsLocalNode { get; set; }
 
-        /// <summary>Gets the signed contact.</summary>
-        public DHTPeer Contact => Snapshot.Contact;
+        /// <summary>Gets the signed contact at its observed endpoints.</summary>
+        public DHTPeer Peer => Snapshot.Peer;
 
         /// <summary>Updates the row.</summary>
         /// <param name="snapshot">The latest snapshot.</param>
@@ -100,16 +104,17 @@ namespace MajDHTProber.ViewModels
                 _ => StatusTone.Neutral,
             };
             Title = string.IsNullOrEmpty(snapshot.Label) ? ShortId : snapshot.Label + " · " + Display.ShortId(NodeId, 6, 4);
-            AddressText = Display.PrimaryAddress(snapshot.Contact);
-            CapabilitiesText = Display.Capabilities(snapshot.Contact.Capabilities);
-            ReachabilityText = Display.Reachability(snapshot.Contact.Reachability);
+            AddressText = Display.PrimaryAddress(snapshot.Peer);
+            CapabilitiesText = Display.Capabilities(snapshot.Peer.Capabilities);
+            ReachabilityText = Display.Reachability(snapshot.Peer.Reachability);
             SourcesText = Display.Sources(snapshot.Sources);
             LastSeenText = Display.Relative(snapshot.LastInteractionAt ?? snapshot.LastSeen, now);
             if (statistics != null)
             {
                 LossText = statistics.SentPackets == 0 ? Display.None : Display.Percent(statistics.PacketLossRate);
             }
-            IsRelay = (snapshot.Contact.Capabilities & DHTCapabilities.Relay) != 0;
+            IsTraversal = (snapshot.Peer.Capabilities & DHTCapabilities.Traversal) != 0;
+            IsForwarder = (snapshot.Peer.Capabilities & DHTCapabilities.Forwarder) != 0;
             IsManual = (snapshot.Sources & PeerSource.Manual) != 0;
             IsLocalNode = (snapshot.Sources & PeerSource.LocalNode) != 0;
         }

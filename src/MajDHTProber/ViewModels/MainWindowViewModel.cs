@@ -45,7 +45,7 @@ namespace MajDHTProber.ViewModels
                 new NavigationItem("概览", "当前节点的身份、可达性、健康指标与本地测试网络", "Icon.Overview", Overview),
                 new NavigationItem("节点", "网络内的节点列表、手动添加节点与连接详情", "Icon.Nodes", Peers),
                 new NavigationItem("内容", "发布、拉取与校验文件，解析键并查找提供者", "Icon.Content", Content),
-                new NavigationItem("调试工具", "端点探测、路由查找、块读取、中继打洞、通信测试与传输统计", "Icon.Tools", Tools),
+                new NavigationItem("调试工具", "端点探测、路由查找、块读取、NAT 穿透与打洞、通信测试与传输统计", "Icon.Tools", Tools),
                 new NavigationItem("日志", "协议库与探测器的实时诊断日志", "Icon.Logs", Logs),
                 new NavigationItem("设置", "主节点网络参数、身份与外观", "Icon.Settings", Settings),
             };

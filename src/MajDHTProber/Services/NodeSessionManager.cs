@@ -310,14 +310,15 @@ namespace MajDHTProber.Services
         {
             var settings = primary.Clone();
             settings.ListenAddresses = IPAddress.Loopback.ToString();
-            settings.AdvertisedAddresses = string.Empty;
+            settings.PubliclyReachable = false;
             settings.TcpEnabled = true;
             settings.TcpPort = 0;
             settings.UdpEnabled = true;
             settings.UdpPort = 0;
             settings.CapabilityDownload = (request.Capabilities & DHTCapabilities.Download) != 0;
             settings.CapabilityProvide = (request.Capabilities & DHTCapabilities.Provide) != 0;
-            settings.CapabilityRelay = (request.Capabilities & DHTCapabilities.Relay) != 0;
+            settings.CapabilityTraversal = (request.Capabilities & DHTCapabilities.Traversal) != 0;
+            settings.CapabilityForwarder = (request.Capabilities & DHTCapabilities.Forwarder) != 0;
             settings.PersistIdentity = true;
             settings.PersistRoutingTable = false;
             settings.AutoStart = false;

@@ -1,5 +1,4 @@
 using System;
-using System.Net;
 using MajDHTNetwork;
 
 #nullable enable
@@ -15,8 +14,8 @@ namespace MajDHTProber.Models
         /// <summary>Gets the node identifier.</summary>
         public required string NodeId { get; init; }
 
-        /// <summary>Gets the newest signed contact seen for the node.</summary>
-        public required DHTPeer Contact { get; init; }
+        /// <summary>Gets the newest signed contact seen for the node, paired with every endpoint observed for it so far.</summary>
+        public required DHTPeer Peer { get; init; }
 
         /// <summary>Gets every way the node was learned.</summary>
         public PeerSource Sources { get; init; }
@@ -30,8 +29,11 @@ namespace MajDHTProber.Models
         /// <summary>Gets whether the node is a routing table entry of the hosted node.</summary>
         public bool InRoutingTable { get; init; }
 
-        /// <summary>Gets the last address at which the node proved an advertised endpoint, if any.</summary>
-        public IPAddress? VerifiedAddress { get; init; }
+        /// <summary>
+        /// Gets the endpoint at which the hosted node itself last exchanged an authenticated packet with the node, if any;
+        /// endpoints learned from referrals are only part of <see cref="Peer"/>.
+        /// </summary>
+        public DHTEndpoint? ObservedEndpoint { get; init; }
 
         /// <summary>Gets when the hosted node last authenticated an exchange with the node.</summary>
         public DateTimeOffset? LastInteractionAt { get; init; }
@@ -55,7 +57,7 @@ namespace MajDHTProber.Models
         /// </remarks>
         public PeerConnectionState GetState(DateTimeOffset now)
         {
-            var expired = Contact.ExpiresAt <= now;
+            var expired = Peer.ExpiresAt <= now;
             if (InRoutingTable && !expired)
             {
                 return PeerConnectionState.Connected;

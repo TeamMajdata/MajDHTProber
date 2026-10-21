@@ -33,8 +33,6 @@ namespace MajDHTProber.Services
     {
         /// <summary>The maximum number of bootstrap endpoints accepted by the library.</summary>
         public const int MaxBootstrapEndpoints = 16;
-        /// <summary>The maximum number of advertised addresses accepted by the library.</summary>
-        public const int MaxAdvertisedAddresses = 4;
 
         /// <summary>Validates settings without building options.</summary>
         /// <param name="settings">The settings.</param>
@@ -112,18 +110,6 @@ namespace MajDHTProber.Services
             {
                 errors.Add("每种地址族（IPv4 / IPv6）最多只能有 1 个监听地址。");
             }
-            var advertised = ParseAddressList(settings.AdvertisedAddresses, "通告地址", false, errors);
-            if (advertised.Count > MaxAdvertisedAddresses)
-            {
-                errors.Add($"通告地址最多 {MaxAdvertisedAddresses} 个。");
-            }
-            foreach (var address in advertised)
-            {
-                if (!listen.Exists(candidate => candidate.AddressFamily == address.AddressFamily))
-                {
-                    errors.Add($"通告地址 {address} 没有同地址族的监听地址。");
-                }
-            }
             if (!settings.TcpEnabled && !settings.UdpEnabled)
             {
                 errors.Add("TCP 与 UDP 至少需要启用一个。");
@@ -159,7 +145,7 @@ namespace MajDHTProber.Services
             return new DHTNodeOptions
             {
                 ListenAddresses = listen,
-                AdvertisedAddresses = advertised,
+                PubliclyReachable = settings.PubliclyReachable,
                 BootstrapEndpoints = bootstrap,
                 TcpPort = settings.TcpEnabled ? settings.TcpPort : null,
                 UdpPort = settings.UdpEnabled ? settings.UdpPort : null,

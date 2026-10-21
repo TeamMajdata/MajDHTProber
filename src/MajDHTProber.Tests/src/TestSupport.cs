@@ -74,17 +74,19 @@ namespace MajDHTProber.Tests
             };
         }
 
-        /// <summary>Starts a loopback node with a fresh identity.</summary>
+        /// <summary>Starts a loopback node on assigned ports.</summary>
         /// <param name="capabilities">The node capabilities.</param>
+        /// <param name="identity">The node identity, or null for a fresh one; reusing an identity simulates a restarted node.</param>
         /// <returns>The started node; the caller disposes it.</returns>
-        internal static async Task<MajDHTNode> StartAsync(DHTCapabilities capabilities = DHTCapabilities.Download | DHTCapabilities.Provide)
+        internal static async Task<MajDHTNode> StartAsync(DHTCapabilities capabilities = DHTCapabilities.Download | DHTCapabilities.Provide,
+            DHTIdentity? identity = null)
         {
-            var node = new MajDHTNode(LoopbackOptions(capabilities), new DHTIdentity());
+            var node = new MajDHTNode(LoopbackOptions(capabilities), identity ?? new DHTIdentity());
             await node.StartAsync();
             return node;
         }
 
-        /// <summary>Returns the TCP endpoint a loopback node advertises.</summary>
+        /// <summary>Returns the TCP endpoint a loopback node listens on.</summary>
         /// <param name="node">The started node.</param>
         /// <returns>The TCP endpoint.</returns>
         internal static IPEndPoint TcpEndpoint(MajDHTNode node)
@@ -93,7 +95,7 @@ namespace MajDHTProber.Tests
             return new IPEndPoint(endpoint.Address, endpoint.TcpPort);
         }
 
-        /// <summary>Returns the UDP endpoint a loopback node advertises.</summary>
+        /// <summary>Returns the UDP endpoint a loopback node listens on.</summary>
         /// <param name="node">The started node.</param>
         /// <returns>The UDP endpoint.</returns>
         internal static IPEndPoint UdpEndpoint(MajDHTNode node)

@@ -13,18 +13,20 @@ using MajDHTProber.Models;
 
 namespace MajDHTProber.ViewModels
 {
-    /// <summary>One advertised endpoint of a signed contact.</summary>
+    /// <summary>One endpoint of a node: a listener endpoint of the active node, or an endpoint observed for a remote node.</summary>
     public sealed class EndpointRowViewModel
     {
+        /// <summary>The endpoint shown by the row.</summary>
+        private readonly DHTEndpoint _endpoint;
+
         /// <summary>Creates a row.</summary>
-        /// <param name="endpoint">The advertised endpoint.</param>
+        /// <param name="endpoint">The endpoint.</param>
         public EndpointRowViewModel(DHTEndpoint endpoint)
         {
+            _endpoint = endpoint;
             AddressText = endpoint.Address.ToString();
             TcpText = endpoint.TcpPort == 0 ? Display.None : endpoint.TcpPort.ToString(CultureInfo.InvariantCulture);
             UdpText = endpoint.UdpPort == 0 ? Display.None : endpoint.UdpPort.ToString(CultureInfo.InvariantCulture);
-            FlagsText = Display.EndpointFlags(endpoint.Flags);
-            IsVerified = (endpoint.Flags & DHTEndpointFlags.Verified) != 0;
         }
 
         /// <summary>Gets the address.</summary>
@@ -36,11 +38,13 @@ namespace MajDHTProber.ViewModels
         /// <summary>Gets the UDP port.</summary>
         public string UdpText { get; }
 
-        /// <summary>Gets the endpoint flags.</summary>
-        public string FlagsText { get; }
-
-        /// <summary>Gets whether an independent dial-back verified the endpoint.</summary>
-        public bool IsVerified { get; }
+        /// <summary>Checks whether the row shows an endpoint.</summary>
+        /// <param name="endpoint">The endpoint.</param>
+        /// <returns>Whether the address and both ports are equal.</returns>
+        public bool Matches(DHTEndpoint endpoint)
+        {
+            return _endpoint.Equals(endpoint);
+        }
     }
 
     /// <summary>The overview page: the active node's identity, reachability, health metrics and the hosted local nodes.</summary>
@@ -60,7 +64,7 @@ namespace MajDHTProber.ViewModels
         /// <summary>Gets every hosted session.</summary>
         public ObservableCollection<SessionItemViewModel> Sessions { get; }
 
-        /// <summary>Gets the advertised endpoints of the active node.</summary>
+        /// <summary>Gets the listener endpoints of the active node, with wildcard listeners represented by their loopback address.</summary>
         public ObservableCollection<EndpointRowViewModel> Endpoints { get; } = new ObservableCollection<EndpointRowViewModel>();
 
         /// <summary>Gets or sets the status of the active session.</summary>
@@ -79,7 +83,7 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial string ReachabilityText { get; set; } = Display.None;
 
-        /// <summary>Gets or sets the confirmed external address.</summary>
+        /// <summary>Gets or sets the external addresses confirmed by independent observers.</summary>
         [ObservableProperty]
         public partial string ExternalAddressText { get; set; } = Display.None;
 
@@ -87,9 +91,9 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial string MappingText { get; set; } = Display.None;
 
-        /// <summary>Gets or sets the embedded relay hints.</summary>
+        /// <summary>Gets or sets the Traversal nodes and Forwarders hinted in the local contact.</summary>
         [ObservableProperty]
-        public partial string RelayHintsText { get; set; } = Display.None;
+        public partial string HintsText { get; set; } = Display.None;
 
         /// <summary>Gets or sets the identity work of the node identity.</summary>
         [ObservableProperty]
@@ -107,9 +111,9 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial string BootstrapText { get; set; } = Display.None;
 
-        /// <summary>Gets or sets whether the running node advertises no endpoint, so other nodes cannot contact it.</summary>
+        /// <summary>Gets or sets whether the running node declared itself private, so other nodes reach it only through Forwarders.</summary>
         [ObservableProperty]
-        public partial bool ShowNoEndpointWarning { get; set; }
+        public partial bool ShowPrivateWarning { get; set; }
 
         /// <summary>Gets or sets the number of known peers.</summary>
         [ObservableProperty]
@@ -155,9 +159,13 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial bool NewNodeProvide { get; set; } = true;
 
-        /// <summary>Gets or sets whether a new local node offers relay assistance.</summary>
+        /// <summary>Gets or sets whether a new local node coordinates traversal.</summary>
         [ObservableProperty]
-        public partial bool NewNodeRelay { get; set; } = true;
+        public partial bool NewNodeTraversal { get; set; } = true;
+
+        /// <summary>Gets or sets whether a new local node forwards traffic.</summary>
+        [ObservableProperty]
+        public partial bool NewNodeForwarder { get; set; } = true;
 
         /// <summary>Re-reads everything after the active session changed.</summary>
         public override void OnActiveSessionChanged()
@@ -187,15 +195,16 @@ namespace MajDHTProber.ViewModels
             var local = session.TryGetLocalPeer();
             if (local != null)
             {
+                var external = session.GetExternalAddresses();
                 CapabilitiesText = Display.Capabilities(local.Capabilities);
                 ReachabilityText = Display.Reachability(local.Reachability);
-                ExternalAddressText = local.ExternalAddress?.ToString() ?? "未确认（需要至少两个不同网段的中继报告）";
+                ExternalAddressText = external.Count == 0 ? "未确认（需要至少两个不同网段的节点报告）" : string.Join("，", external);
                 MappingText = local.HasEndpointDependentMapping ? "端点相关映射（难以打洞）" : "未观察到端点相关映射";
-                RelayHintsText = local.RelayHints.Count == 0 ? "无" : local.RelayHints.Count + " 个";
+                HintsText = local.Hints.Count == 0 ? "无" : string.Join("；", local.Hints.Select(Display.Hint));
                 IdentityWorkText = local.IdentityWork + " 位（网络要求 " + settings.IdentityWorkBits + " 位）";
                 ContactLeaseText = "序号 " + local.Sequence.ToString(CultureInfo.InvariantCulture) + " · " + Display.Future(local.ExpiresAt, now) + "到期";
                 SyncEndpoints(local);
-                ShowNoEndpointWarning = local.Endpoints.Count == 0;
+                ShowPrivateWarning = local.Reachability == DHTReachability.Private;
             }
             else
             {
@@ -203,11 +212,11 @@ namespace MajDHTProber.ViewModels
                 ReachabilityText = Display.None;
                 ExternalAddressText = Display.None;
                 MappingText = Display.None;
-                RelayHintsText = Display.None;
+                HintsText = Display.None;
                 IdentityWorkText = "网络要求 " + settings.IdentityWorkBits + " 位";
                 ContactLeaseText = Display.None;
                 Endpoints.Clear();
-                ShowNoEndpointWarning = false;
+                ShowPrivateWarning = false;
             }
             var connected = 0;
             var reachable = 0;
@@ -353,9 +362,13 @@ namespace MajDHTProber.ViewModels
             {
                 capabilities |= DHTCapabilities.Provide;
             }
-            if (NewNodeRelay)
+            if (NewNodeTraversal)
             {
-                capabilities |= DHTCapabilities.Relay;
+                capabilities |= DHTCapabilities.Traversal;
+            }
+            if (NewNodeForwarder)
+            {
+                capabilities |= DHTCapabilities.Forwarder;
             }
             string? label = null;
             if (await RunAsync("创建本地节点", async () =>
@@ -414,16 +427,14 @@ namespace MajDHTProber.ViewModels
             return port == 0 ? "自动分配" : port.ToString(CultureInfo.InvariantCulture);
         }
 
-        /// <summary>Replaces the endpoint rows when the advertised endpoints changed.</summary>
-        /// <param name="local">The signed local contact.</param>
+        /// <summary>Replaces the endpoint rows when the listener endpoints changed.</summary>
+        /// <param name="local">The local contact at its listener endpoints.</param>
         private void SyncEndpoints(DHTPeer local)
         {
             var changed = Endpoints.Count != local.Endpoints.Count;
             for (var index = 0; !changed && index < local.Endpoints.Count; index++)
             {
-                var row = new EndpointRowViewModel(local.Endpoints[index]);
-                changed = row.AddressText != Endpoints[index].AddressText || row.FlagsText != Endpoints[index].FlagsText
-                    || row.TcpText != Endpoints[index].TcpText || row.UdpText != Endpoints[index].UdpText;
+                changed = !Endpoints[index].Matches(local.Endpoints[index]);
             }
             if (!changed)
             {

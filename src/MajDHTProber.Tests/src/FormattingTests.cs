@@ -47,14 +47,28 @@ namespace MajDHTProber.Tests
             Assert.Equal(Display.None, Display.ShortId(null));
         }
 
-        /// <summary>Capabilities and endpoint flags are listed in Chinese.</summary>
+        /// <summary>Capabilities, reachability and peer sources are listed in Chinese.</summary>
         [Fact]
         public void FormatsProtocolFlags()
         {
-            Assert.Equal("下载 · 提供 · 中继", Display.Capabilities(DHTCapabilities.Download | DHTCapabilities.Provide | DHTCapabilities.Relay));
+            Assert.Equal("下载 · 提供 · Traversal · Forwarder",
+                Display.Capabilities(DHTCapabilities.Download | DHTCapabilities.Provide | DHTCapabilities.Traversal | DHTCapabilities.Forwarder));
             Assert.Equal("无", Display.Capabilities(0));
-            Assert.Equal("已验证 · 本地", Display.EndpointFlags(DHTEndpointFlags.Verified | DHTEndpointFlags.Local));
-            Assert.Equal("未验证", Display.EndpointFlags(DHTEndpointFlags.None));
+            Assert.Equal("私有（经 Forwarder）", Display.Reachability(DHTReachability.Private));
+            Assert.Equal("路由 · 提示", Display.Sources(MajDHTProber.Models.PeerSource.Routing | MajDHTProber.Models.PeerSource.Hint));
+        }
+
+        /// <summary>Observed endpoints are listed with their ports, and the newest observation leads the address summary.</summary>
+        [Fact]
+        public void FormatsObservedEndpoints()
+        {
+            var contact = DHTContact.Create(new DHTIdentity(), DHTCapabilities.Download);
+            var older = new DHTEndpoint(System.Net.IPAddress.Parse("203.0.113.5"), 42000, 0);
+            var newer = new DHTEndpoint(System.Net.IPAddress.Parse("198.51.100.7"), 0, 42001);
+
+            Assert.Equal("203.0.113.5 · TCP 42000", Display.Endpoint(older));
+            Assert.Equal("198.51.100.7 · UDP 42001（+1）", Display.PrimaryAddress(new DHTPeer(contact, new[] { older, newer })));
+            Assert.Equal(Display.None, Display.PrimaryAddress(new DHTPeer(contact, Array.Empty<DHTEndpoint>())));
         }
 
         /// <summary>Relative times are formatted against the given now.</summary>

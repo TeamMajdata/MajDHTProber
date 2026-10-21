@@ -22,7 +22,7 @@ namespace MajDHTProber.Models
         /// <summary>Gets the contacted endpoint.</summary>
         public required IPEndPoint Endpoint { get; init; }
 
-        /// <summary>Gets how long the Hello exchange, relay registration and neighbor discovery took.</summary>
+        /// <summary>Gets how long the Hello exchange, Traversal node and Forwarder registration and neighbor discovery took.</summary>
         public required TimeSpan Elapsed { get; init; }
 
         /// <summary>Gets the signed contact of the node that answered, or null when nothing was added.</summary>
@@ -61,6 +61,7 @@ namespace MajDHTProber.Models
     public sealed record LocalNodeRequest
     {
         /// <summary>Gets the capabilities of the new node.</summary>
-        public DHTCapabilities Capabilities { get; init; } = DHTCapabilities.Download | DHTCapabilities.Provide | DHTCapabilities.Relay;
+        public DHTCapabilities Capabilities { get; init; } =
+            DHTCapabilities.Download | DHTCapabilities.Provide | DHTCapabilities.Traversal | DHTCapabilities.Forwarder;
     }
 }

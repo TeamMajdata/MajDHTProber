@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -67,11 +68,12 @@ namespace MajDHTProber.Tests
         public async Task AddsPeerByEndpoint()
         {
             using var timeout = TestNodes.Timeout();
-            await using var target = await TestNodes.StartAsync(DHTCapabilities.Download | DHTCapabilities.Provide | DHTCapabilities.Relay);
+            await using var target = await TestNodes.StartAsync(DHTCapabilities.Download | DHTCapabilities.Provide | DHTCapabilities.Traversal);
             await using var session = TestNodes.CreateSession(new LogSink(), TestNodes.LoopbackSettings());
             await session.StartAsync(timeout.Token);
+            var endpoint = TestNodes.TcpEndpoint(target);
 
-            var result = await session.AddPeerAsync(TestNodes.TcpEndpoint(target), new AddPeerOptions { Transport = DHTTransport.Tcp }, timeout.Token);
+            var result = await session.AddPeerAsync(endpoint, new AddPeerOptions { Transport = DHTTransport.Tcp }, timeout.Token);
 
             Assert.True(result.Added, result.Note);
             Assert.True(result.AdmittedToRoutingTable);
@@ -81,10 +83,47 @@ namespace MajDHTProber.Tests
             var peer = session.Peers.Find(target.NodeId);
             Assert.NotNull(peer);
             Assert.True((peer!.Sources & PeerSource.Manual) != 0);
-            Assert.Equal(IPAddress.Loopback, peer.VerifiedAddress);
+            Assert.Equal(IPAddress.Loopback, peer.ObservedEndpoint?.Address);
+            Assert.Equal(endpoint.Port, peer.ObservedEndpoint?.TcpPort);
+            Assert.True(peer.Peer.WasObservedAt(DHTTransport.Tcp, endpoint));
             Assert.Equal(PeerConnectionState.Connected, peer.GetState(DateTimeOffset.UtcNow));
             Assert.True(session.RoutingTable!.Contains(target.NodeId));
             Assert.True(target.KnownPeers.Count >= 1);
+        }
+
+        /// <summary>
+        /// A routed peer that restarts on another port and contacts the hosted node again is re-verified there, and the peer
+        /// list replaces the old port with the new one instead of keeping a stale endpoint.
+        /// </summary>
+        /// <returns>Completion after the checks.</returns>
+        [Fact]
+        public async Task LearnsNewEndpointOfRestartedPeer()
+        {
+            using var timeout = TestNodes.Timeout();
+            await using var session = TestNodes.CreateSession(new LogSink(), TestNodes.LoopbackSettings());
+            await session.StartAsync(timeout.Token);
+            var entry = session.GetContactEndpoints(DHTTransport.Tcp)[0];
+            var identity = new DHTIdentity();
+            IPEndPoint original;
+            await using (var first = await TestNodes.StartAsync(identity: identity))
+            {
+                original = TestNodes.TcpEndpoint(first);
+                await first.AddPeerAsync(entry, DHTTransport.Tcp, timeout.Token);
+                await TestNodes.WaitUntilAsync(() => session.Peers.Find(identity.NodeId)?.Peer.WasObservedAt(DHTTransport.Tcp, original) == true, timeout.Token);
+            }
+            Assert.Equal(original.Port, session.Peers.Find(identity.NodeId)!.ObservedEndpoint?.TcpPort);
+
+            await using var restarted = await TestNodes.StartAsync(identity: identity);
+            var moved = TestNodes.TcpEndpoint(restarted);
+            await restarted.AddPeerAsync(entry, DHTTransport.Tcp, timeout.Token);
+            await TestNodes.WaitUntilAsync(() => session.Peers.Find(identity.NodeId)?.Peer.WasObservedAt(DHTTransport.Tcp, moved) == true, timeout.Token);
+
+            var peer = session.Peers.Find(identity.NodeId)!;
+            Assert.True(peer.InRoutingTable);
+            Assert.Equal(moved.Port, peer.ObservedEndpoint?.TcpPort);
+            // Both observations share the loopback address, so the new port replaces the old one in a single endpoint.
+            Assert.Equal(moved.Port, Assert.Single(peer.Peer.Endpoints).TcpPort);
+            Assert.True(session.RoutingTable!.Snapshot().Single(routed => routed.NodeId == identity.NodeId).WasObservedAt(DHTTransport.Tcp, moved));
         }
 
         /// <summary>Adding the session's own endpoint is refused with an explanation.</summary>
@@ -124,7 +163,7 @@ namespace MajDHTProber.Tests
             Assert.Equal(0, session.Peers.Count);
         }
 
-        /// <summary>Probing a known peer covers every advertised endpoint and transport and remembers the outcome.</summary>
+        /// <summary>Probing a known peer covers every observed endpoint and transport and remembers the outcome.</summary>
         /// <returns>Completion after the checks.</returns>
         [Fact]
         public async Task ProbesKnownPeer()
@@ -134,10 +173,13 @@ namespace MajDHTProber.Tests
             await using var session = TestNodes.CreateSession(new LogSink(), TestNodes.LoopbackSettings());
             await session.StartAsync(timeout.Token);
             await session.AddPeerAsync(TestNodes.UdpEndpoint(target), new AddPeerOptions { Transport = DHTTransport.Udp }, timeout.Token);
+            await session.AddPeerAsync(TestNodes.TcpEndpoint(target), new AddPeerOptions { Transport = DHTTransport.Tcp }, timeout.Token);
 
             var results = await session.ProbePeerAsync(session.Peers.Find(target.NodeId)!, timeout.Token);
             var route = await session.CheckRouteAsync(target.LocalPeer, timeout.Token);
 
+            // Both transports were observed at the same loopback address, so the single merged endpoint is probed over each.
+            Assert.Single(session.Peers.Find(target.NodeId)!.Peer.Endpoints);
             Assert.Equal(2, results.Count);
             Assert.All(results, result => Assert.Equal(target.NodeId, result.NodeId));
             Assert.All(results, result => Assert.True(result.PingSucceeded, result.Error));

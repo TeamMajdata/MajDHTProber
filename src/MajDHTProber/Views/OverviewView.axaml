@@ -57,11 +57,11 @@
                         </Button>
                     </StackPanel>
 
-                    <Border Grid.Row="1" Grid.ColumnSpan="2" Classes="banner warning" Margin="0,16,0,0" IsVisible="{Binding ShowNoEndpointWarning}">
+                    <Border Grid.Row="1" Grid.ColumnSpan="2" Classes="banner warning" Margin="0,16,0,0" IsVisible="{Binding ShowPrivateWarning}">
                         <Grid ColumnDefinitions="Auto,*">
                             <c:LineIcon Data="{StaticResource Icon.Warning}" Margin="0,0,10,0" VerticalAlignment="Top" />
                             <TextBlock Grid.Column="1"
-                                       Text="当前节点没有通告任何端点：其他节点能应答它的请求，却无法主动连接它，也不会把它加入路由表。若需被其他节点发现，请在设置中监听具体地址，或填写“通告地址”（例如本机局域网 IP）。" />
+                                       Text="当前节点被判定为私有节点：独立回拨无法从外部到达它，其他节点只能经它联系人中提示的 Forwarder 访问它，也不会把它加入路由表。若本机确实可从公网访问（固定公网地址或端口映射），请在设置中勾选“已知公网可达”。" />
                         </Grid>
                     </Border>
 
@@ -91,8 +91,8 @@
                             <TextBlock Grid.Row="1" Grid.Column="1" Classes="value" Text="{Binding ExternalAddressText}" />
                             <TextBlock Grid.Row="2" Classes="field" Text="NAT 映射" />
                             <TextBlock Grid.Row="2" Grid.Column="1" Classes="value" Text="{Binding MappingText}" />
-                            <TextBlock Grid.Row="3" Classes="field" Text="中继提示" />
-                            <TextBlock Grid.Row="3" Grid.Column="1" Classes="value" Text="{Binding RelayHintsText}" />
+                            <TextBlock Grid.Row="3" Classes="field" Text="提示节点" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Classes="value" Text="{Binding HintsText}" TextWrapping="Wrap" />
                             <TextBlock Grid.Row="4" Classes="field" Text="引导端点" />
                             <TextBlock Grid.Row="4" Grid.Column="1" Classes="value" Text="{Binding BootstrapText}" />
                         </Grid>
@@ -139,13 +139,13 @@
                 </Border>
             </UniformGrid>
 
-            <!-- Advertised endpoints -->
+            <!-- Listener endpoints -->
             <Border Classes="card">
                 <StackPanel Spacing="12">
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Spacing="2">
-                            <TextBlock Classes="h2" Text="通告端点" />
-                            <TextBlock Classes="caption" Text="签名联系人中通告给其他节点的地址；“已验证”表示独立回拨确认可从外部访问。" />
+                            <TextBlock Classes="h2" Text="监听端点" />
+                            <TextBlock Classes="caption" Text="本节点监听的地址与端口（通配地址以回环地址显示）。签名联系人不携带端点：其他节点通过观察本节点发出的数据包得知其端点，可达性由独立回拨确认。" />
                         </StackPanel>
                         <Button Grid.Column="1" Command="{Binding CopyEndpointCommand}" VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal" Spacing="7">
@@ -155,28 +155,24 @@
                         </Button>
                     </Grid>
                     <Border Classes="tablehead">
-                        <Grid ColumnDefinitions="2*,*,*,2*">
+                        <Grid ColumnDefinitions="2*,*,*">
                             <TextBlock Classes="head" Text="地址" />
                             <TextBlock Grid.Column="1" Classes="head" Text="TCP" />
                             <TextBlock Grid.Column="2" Classes="head" Text="UDP" />
-                            <TextBlock Grid.Column="3" Classes="head" Text="标记" />
                         </Grid>
                     </Border>
                     <ItemsControl ItemsSource="{Binding Endpoints}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:EndpointRowViewModel">
-                                <Grid ColumnDefinitions="2*,*,*,2*" Margin="10,5">
+                                <Grid ColumnDefinitions="2*,*,*" Margin="10,5">
                                     <TextBlock Classes="cell mono" Text="{Binding AddressText}" />
                                     <TextBlock Grid.Column="1" Classes="cell mono" Text="{Binding TcpText}" />
                                     <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding UdpText}" />
-                                    <Border Grid.Column="3" Classes="pill" Classes.success="{Binding IsVerified}">
-                                        <TextBlock Text="{Binding FlagsText}" />
-                                    </Border>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBlock Classes="caption" Text="节点未运行或未通告端点。" IsVisible="{Binding !Endpoints.Count}" Margin="10,0" />
+                    <TextBlock Classes="caption" Text="节点未运行。" IsVisible="{Binding !Endpoints.Count}" Margin="10,0" />
                 </StackPanel>
             </Border>
 
@@ -196,7 +192,8 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16">
                                 <CheckBox Content="下载" IsChecked="{Binding NewNodeDownload}" />
                                 <CheckBox Content="提供" IsChecked="{Binding NewNodeProvide}" />
-                                <CheckBox Content="中继" IsChecked="{Binding NewNodeRelay}" />
+                                <CheckBox Content="穿透协调 (Traversal)" IsChecked="{Binding NewNodeTraversal}" />
+                                <CheckBox Content="转发 (Forwarder)" IsChecked="{Binding NewNodeForwarder}" />
                             </StackPanel>
                             <Button Grid.Column="2" Classes="accent" Command="{Binding AddLocalNodeCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="7">

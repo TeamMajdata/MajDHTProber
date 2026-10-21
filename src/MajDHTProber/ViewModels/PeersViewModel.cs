@@ -155,7 +155,7 @@ namespace MajDHTProber.ViewModels
             }
             if (Detail?.Item != value)
             {
-                Detail = new PeerDetailViewModel(Context, value, RelayCandidates, OnForgotten);
+                Detail = new PeerDetailViewModel(Context, value, TraversalCandidates, OnForgotten);
             }
         }
 
@@ -240,14 +240,14 @@ namespace MajDHTProber.ViewModels
             IsAddFormOpen = !IsAddFormOpen;
         }
 
-        /// <summary>Returns the rows that offer relay assistance.</summary>
-        /// <returns>The relay rows.</returns>
-        private IReadOnlyList<PeerItemViewModel> RelayCandidates()
+        /// <summary>Returns the rows that coordinate traversal.</summary>
+        /// <returns>The unexpired Traversal node rows.</returns>
+        private IReadOnlyList<PeerItemViewModel> TraversalCandidates()
         {
             var result = new List<PeerItemViewModel>();
             foreach (var item in _items.Values)
             {
-                if (item.IsRelay && !item.Contact.IsExpired)
+                if (item.IsTraversal && !item.Peer.IsExpired)
                 {
                     result.Add(item);
                 }

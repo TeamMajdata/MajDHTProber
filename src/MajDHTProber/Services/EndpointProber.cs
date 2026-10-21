@@ -81,8 +81,8 @@ namespace MajDHTProber.Services
     /// and then sends one encrypted Ping request to the same endpoint over the same transport, timing both exchanges.
     /// </summary>
     /// <remarks>
-    /// The probe advertises no endpoint and answers no request, so remote nodes answer it but never use it as a routing
-    /// contact. Probing never involves the hosted nodes, so it never changes their routing state either.
+    /// The probe answers no request, so remote nodes answer it but never use it as a routing contact. Probing never
+    /// involves the hosted nodes, so it never changes their routing state either.
     /// </remarks>
     public sealed class EndpointProber
     {
@@ -135,8 +135,8 @@ namespace MajDHTProber.Services
                 try
                 {
                     socket.Bind();
-                    var self = DHTPeer.Create(identity, Array.Empty<DHTEndpoint>(), DHTCapabilities.Download, DHTReachability.Unknown, false,
-                        null, Array.Empty<DHTPeer>(), s_contactLifetime);
+                    var self = DHTContact.Create(identity, DHTCapabilities.Download, DHTReachability.Unknown, false, Array.Empty<DHTPeer>(),
+                        s_contactLifetime);
                     socket.Run();
                     hello = await HelloAsync(socket, identity, self, endpoint, transport, counter, cancellationToken).ConfigureAwait(false);
                     if (options.IdentityWorkBits > 0 && hello.Peer.IdentityWork < options.IdentityWorkBits)
@@ -227,7 +227,7 @@ namespace MajDHTProber.Services
         /// <param name="bootstrap">The single bootstrap endpoint.</param>
         /// <param name="transport">The preferred transport.</param>
         /// <param name="options">The client tuning.</param>
-        /// <returns>The node options: a wildcard listener on assigned ports that advertises no endpoint.</returns>
+        /// <returns>The node options: a wildcard listener on assigned ports without NAT traversal.</returns>
         internal DHTNodeOptions CreateClientOptions(IPEndPoint bootstrap, DHTTransport transport, ProbeOptions options)
         {
             return new DHTNodeOptions
@@ -277,12 +277,14 @@ namespace MajDHTProber.Services
         /// <param name="transport">The probed transport.</param>
         /// <param name="counter">Counts the transmissions of the exchange.</param>
         /// <param name="cancellationToken">Cancels the exchange.</param>
-        /// <returns>The answering contact, the round trip and the endpoint the responder observed for the probe.</returns>
+        /// <returns>
+        /// The answering contact at the probed endpoint, the round trip and the endpoint the responder observed for the probe.
+        /// </returns>
         /// <exception cref="IOException">The endpoint did not answer.</exception>
         /// <exception cref="CryptographicException">The answer was forged, miscorrelated or sent by the probe identity itself.</exception>
         /// <exception cref="InvalidDataException">The answer is malformed.</exception>
         /// <exception cref="OperationCanceledException">The exchange was cancelled.</exception>
-        private static async Task<HelloOutcome> HelloAsync(SocketTransport socket, DHTIdentity identity, DHTPeer self, IPEndPoint endpoint,
+        private static async Task<HelloOutcome> HelloAsync(SocketTransport socket, DHTIdentity identity, DHTContact self, IPEndPoint endpoint,
             DHTTransport transport, TransmissionCounter counter, CancellationToken cancellationToken)
         {
             var request = new Packet(self, Crypto.Random(Packet.RequestIdLength), (byte)Operation.Hello, ReadOnlyMemory<byte>.Empty);
@@ -295,7 +297,7 @@ namespace MajDHTProber.Services
             VerifyResponse(response, request, identity, null);
             using var reader = new Wire(ResponseStatus.ReadResult(response.Body));
             var observed = HelloMessage.ReadResponse(reader);
-            return new HelloOutcome(response.Sender, stopwatch.Elapsed, observed);
+            return new HelloOutcome(DHTPeer.Observed(response.Sender, transport, endpoint), stopwatch.Elapsed, observed);
         }
 
         /// <summary>Sends one encrypted Ping request to the node that answered the Hello, reporting failures in the outcome.</summary>
@@ -309,7 +311,7 @@ namespace MajDHTProber.Services
         /// <param name="cancellationToken">Cancels the exchange.</param>
         /// <returns>The outcome with the round trip or a failure description.</returns>
         /// <exception cref="OperationCanceledException">The exchange was cancelled.</exception>
-        private static async Task<PingOutcome> PingAsync(SocketTransport socket, DHTIdentity identity, DHTPeer self, DHTPeer peer, IPEndPoint endpoint,
+        private static async Task<PingOutcome> PingAsync(SocketTransport socket, DHTIdentity identity, DHTContact self, DHTPeer peer, IPEndPoint endpoint,
             DHTTransport transport, TransmissionCounter counter, CancellationToken cancellationToken)
         {
             var request = new Packet(self, Crypto.Random(Packet.RequestIdLength), (byte)Operation.Ping, ReadOnlyMemory<byte>.Empty);
@@ -390,7 +392,7 @@ namespace MajDHTProber.Services
         }
 
         /// <summary>The authenticated answer to a Hello request.</summary>
-        /// <param name="Peer">The answering contact.</param>
+        /// <param name="Peer">The answering contact at the probed endpoint.</param>
         /// <param name="RoundTrip">The time between sending the request and receiving the answer.</param>
         /// <param name="ObservedEndpoint">The endpoint the responder observed for the probe.</param>
         private sealed record HelloOutcome(DHTPeer Peer, TimeSpan RoundTrip, IPEndPoint ObservedEndpoint);

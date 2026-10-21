@@ -22,7 +22,7 @@ namespace MajDHTProber.Models
         Probe = 16,
         /// <summary>It is another node hosted by this prober process.</summary>
         LocalNode = 32,
-        /// <summary>Another contact embedded it as a relay hint.</summary>
-        RelayHint = 64,
+        /// <summary>Another contact embedded it as a hinted Traversal node or Forwarder.</summary>
+        Hint = 64,
     }
 }

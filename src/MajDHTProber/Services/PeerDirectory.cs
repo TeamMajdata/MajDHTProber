@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Net;
 using System.Threading;
 using MajDHTNetwork;
 using MajDHTProber.Models;
@@ -72,29 +71,32 @@ namespace MajDHTProber.Services
             }
         }
 
-        /// <summary>Records a signed contact learned from a source, keeping the contact with the higher sequence.</summary>
-        /// <param name="contact">The signed contact.</param>
-        /// <param name="source">How the contact was learned.</param>
+        /// <summary>
+        /// Records a node learned from a source, keeping the contact with the higher sequence and merging the newly reported
+        /// endpoints into the endpoints already known for the node.
+        /// </summary>
+        /// <param name="peer">The signed contact at the endpoints the source reported for it.</param>
+        /// <param name="source">How the node was learned.</param>
         /// <param name="inRoutingTable">The routing table membership after this event, or null when it is unknown.</param>
-        /// <param name="verifiedAddress">An address at which the node proved an advertised endpoint, or null.</param>
+        /// <param name="observed">The endpoint at which the hosted node itself exchanged an authenticated packet with the node, or null.</param>
         /// <param name="interaction">Whether this event is an authenticated exchange with the node.</param>
         /// <returns>The updated snapshot.</returns>
-        public PeerSnapshot Observe(DHTPeer contact, PeerSource source, bool? inRoutingTable = null, IPAddress? verifiedAddress = null,
+        public PeerSnapshot Observe(DHTPeer peer, PeerSource source, bool? inRoutingTable = null, DHTEndpoint? observed = null,
             bool interaction = false)
         {
             var now = _clock();
             PeerSnapshot updated;
             lock (_gate)
             {
-                if (_peers.TryGetValue(contact.NodeId, out var known))
+                if (_peers.TryGetValue(peer.NodeId, out var known))
                 {
                     updated = known with
                     {
-                        Contact = contact.Sequence >= known.Contact.Sequence ? contact : known.Contact,
+                        Peer = Merge(known.Peer, peer),
                         Sources = known.Sources | source,
                         LastSeen = now,
                         InRoutingTable = inRoutingTable ?? known.InRoutingTable,
-                        VerifiedAddress = verifiedAddress ?? known.VerifiedAddress,
+                        ObservedEndpoint = observed ?? known.ObservedEndpoint,
                         LastInteractionAt = interaction ? now : known.LastInteractionAt,
                     };
                 }
@@ -102,20 +104,34 @@ namespace MajDHTProber.Services
                 {
                     updated = new PeerSnapshot
                     {
-                        NodeId = contact.NodeId,
-                        Contact = contact,
+                        NodeId = peer.NodeId,
+                        Peer = peer,
                         Sources = source,
                         FirstSeen = now,
                         LastSeen = now,
                         InRoutingTable = inRoutingTable ?? false,
-                        VerifiedAddress = verifiedAddress,
+                        ObservedEndpoint = observed,
                         LastInteractionAt = interaction ? now : null,
                     };
                 }
-                _peers[contact.NodeId] = updated;
+                _peers[peer.NodeId] = updated;
             }
             Notify(updated);
             return updated;
+        }
+
+        /// <summary>Combines a known peer with a newer report of the same node.</summary>
+        /// <param name="known">The peer as known so far.</param>
+        /// <param name="update">The newly reported peer.</param>
+        /// <returns>The contact with the higher sequence, at the known endpoints merged with the reported ones.</returns>
+        private static DHTPeer Merge(DHTPeer known, DHTPeer update)
+        {
+            var merged = update.Sequence >= known.Sequence ? known.WithContact(update.Contact) : known;
+            foreach (var endpoint in update.Endpoints)
+            {
+                merged = merged.WithEndpoint(endpoint);
+            }
+            return merged;
         }
 
         /// <summary>
@@ -132,7 +148,7 @@ namespace MajDHTProber.Services
             {
                 if (_peers.TryGetValue(nodeId, out var known))
                 {
-                    updated = known.Contact.Reachability == DHTReachability.Private
+                    updated = known.Peer.Reachability == DHTReachability.Private
                         ? known with { InRoutingTable = false, LastInteractionAt = now, LastSeen = now }
                         : known with { InRoutingTable = false, RemovedAt = now };
                     _peers[nodeId] = updated;

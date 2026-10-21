@@ -15,8 +15,8 @@ using MajDHTProber.Services;
 namespace MajDHTProber.ViewModels.Tools
 {
     /// <summary>
-    /// Reads one verified block from a chosen provider, optionally through a chosen relay, to debug individual transfers
-    /// and relay paths.
+    /// Reads one verified block from a chosen provider, optionally through a chosen Forwarder, to debug individual
+    /// transfers and forwarding paths.
     /// </summary>
     public sealed partial class BlockToolViewModel : OperationViewModel
     {
@@ -33,8 +33,8 @@ namespace MajDHTProber.ViewModels.Tools
         /// <summary>Gets the providers of the resolved record.</summary>
         public ObservableCollection<PeerChoiceViewModel> Providers { get; } = new ObservableCollection<PeerChoiceViewModel>();
 
-        /// <summary>Gets the relay choices, starting with "no relay".</summary>
-        public ObservableCollection<PeerChoiceViewModel> Relays { get; } = new ObservableCollection<PeerChoiceViewModel>();
+        /// <summary>Gets the Forwarder choices, starting with "no Forwarder".</summary>
+        public ObservableCollection<PeerChoiceViewModel> Forwarders { get; } = new ObservableCollection<PeerChoiceViewModel>();
 
         /// <summary>Gets the result banner.</summary>
         public BannerViewModel Result { get; } = new BannerViewModel();
@@ -51,9 +51,9 @@ namespace MajDHTProber.ViewModels.Tools
         [ObservableProperty]
         public partial PeerChoiceViewModel? SelectedProvider { get; set; }
 
-        /// <summary>Gets or sets the selected relay.</summary>
+        /// <summary>Gets or sets the selected Forwarder.</summary>
         [ObservableProperty]
-        public partial PeerChoiceViewModel? SelectedRelay { get; set; }
+        public partial PeerChoiceViewModel? SelectedForwarder { get; set; }
 
         /// <summary>Gets or sets the block index.</summary>
         [ObservableProperty]
@@ -71,22 +71,22 @@ namespace MajDHTProber.ViewModels.Tools
         [ObservableProperty]
         public partial string HexText { get; set; } = string.Empty;
 
-        /// <summary>Reloads the relay choices from the active session's peers.</summary>
-        public void RefreshRelays()
+        /// <summary>Reloads the Forwarder choices from the active session's peers.</summary>
+        public void RefreshForwarders()
         {
-            var keep = SelectedRelay?.Contact?.NodeId;
-            Relays.Clear();
-            Relays.Add(new PeerChoiceViewModel(null, "不指定（直连，失败时自动回退中继）"));
-            foreach (var choice in PeerChoiceViewModel.FromSession(Session, true))
+            var keep = SelectedForwarder?.Peer?.NodeId;
+            Forwarders.Clear();
+            Forwarders.Add(new PeerChoiceViewModel(null, "不指定（直连，失败时自动回退 Forwarder）"));
+            foreach (var choice in PeerChoiceViewModel.FromSession(Session, DHTCapabilities.Forwarder))
             {
-                Relays.Add(choice);
+                Forwarders.Add(choice);
             }
-            SelectedRelay = Relays[0];
-            foreach (var relay in Relays)
+            SelectedForwarder = Forwarders[0];
+            foreach (var forwarder in Forwarders)
             {
-                if (relay.Contact?.NodeId == keep && keep != null)
+                if (forwarder.Peer?.NodeId == keep && keep != null)
                 {
-                    SelectedRelay = relay;
+                    SelectedForwarder = forwarder;
                 }
             }
         }
@@ -98,7 +98,7 @@ namespace MajDHTProber.ViewModels.Tools
         private async Task ResolveAsync(CancellationToken cancellationToken)
         {
             Result.Hide();
-            RefreshRelays();
+            RefreshForwarders();
             if (!RecordInput.TryParse(RecordText, out var key, out var record, out var error))
             {
                 Result.Show(error, StatusTone.Warning);
@@ -138,17 +138,17 @@ namespace MajDHTProber.ViewModels.Tools
         {
             Result.Hide();
             var record = _record;
-            var provider = SelectedProvider?.Contact;
+            var provider = SelectedProvider?.Peer;
             if (record == null || provider == null)
             {
                 Result.Show("请先解析记录并选择提供者。", StatusTone.Warning);
                 return;
             }
             var index = (int)Math.Clamp(BlockIndex ?? 0, 0, MaxBlockIndex);
-            var relay = SelectedRelay?.Contact;
+            var forwarder = SelectedForwarder?.Peer;
             ReadOnlyMemory<byte> block = default;
             var stopwatch = Stopwatch.StartNew();
-            if (!await RunAsync("读取块", async () => block = await Session.ReadBlockAsync(record, provider, index, relay, cancellationToken)))
+            if (!await RunAsync("读取块", async () => block = await Session.ReadBlockAsync(record, provider, index, forwarder, cancellationToken)))
             {
                 BlockInfo = string.Empty;
                 HexText = string.Empty;
@@ -156,7 +156,7 @@ namespace MajDHTProber.ViewModels.Tools
             }
             stopwatch.Stop();
             BlockInfo = "块 " + index + " · " + Display.Bytes(block.Length) + " · 耗时 " + Display.Duration(stopwatch.Elapsed)
-                + (relay == null ? string.Empty : " · 经中继 " + Display.ShortId(relay.NodeId, 8, 4)) + Environment.NewLine
+                + (forwarder == null ? string.Empty : " · 经 Forwarder " + Display.ShortId(forwarder.NodeId, 8, 4)) + Environment.NewLine
                 + "块 SHA-256：" + ContentPreview.Sha256(block.Span);
             HexText = HexDump.Format(block.Span, 4096);
             Result.Show("块已通过长度与 Merkle 位置校验。", StatusTone.Success);

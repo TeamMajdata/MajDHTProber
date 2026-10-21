@@ -17,17 +17,15 @@
                                 </Border>
                                 <StackPanel VerticalAlignment="Center" Spacing="2">
                                     <TextBlock Classes="h2" Text="网络与监听" />
-                                    <TextBlock Classes="caption" Text="主节点的监听地址、端口与通告地址。修改后需重启主节点生效。" />
+                                    <TextBlock Classes="caption" Text="主节点的监听地址、端口与可达性。修改后需重启主节点生效。" />
                                 </StackPanel>
                             </StackPanel>
                             <StackPanel>
                                 <TextBlock Classes="label" Text="监听地址（1 个，或 IPv4 + IPv6 各 1 个；可用 0.0.0.0 / ::）" />
                                 <TextBox Classes="mono" Text="{Binding ListenAddresses}" PlaceholderText="0.0.0.0, ::" />
                             </StackPanel>
-                            <StackPanel>
-                                <TextBlock Classes="label" Text="通告地址（最多 4 个；留空则自动发现可达性）" />
-                                <TextBox Classes="mono" Text="{Binding AdvertisedAddresses}" PlaceholderText="例如 192.168.1.10" />
-                            </StackPanel>
+                            <ToggleSwitch IsChecked="{Binding PubliclyReachable}" OnContent="已知公网可达（固定公网地址或路由器端口映射）：直接通告公网可达，跳过回拨检查"
+                                          OffContent="自动发现可达性（经其他节点的观察与独立回拨确认）" />
                             <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
                                 <StackPanel Spacing="4">
                                     <CheckBox Content="启用 TCP" IsChecked="{Binding TcpEnabled}" />
@@ -44,26 +42,6 @@
                                     <ComboBox ItemsSource="{Binding TransportOptions}" SelectedIndex="{Binding PreferredTransportIndex}" HorizontalAlignment="Stretch" />
                                 </StackPanel>
                             </Grid>
-                            <StackPanel Spacing="6">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Classes="label" Text="本机网卡地址（点击加入通告地址）" />
-                                    <Button Grid.Column="1" Classes="link" Content="刷新" Command="{Binding ReloadLocalAddressesCommand}" />
-                                </Grid>
-                                <ItemsControl ItemsSource="{Binding LocalAddresses}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <WrapPanel ItemSpacing="6" LineSpacing="6" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:LocalAddressViewModel">
-                                            <Button Padding="9,4" ToolTip.Tip="{Binding InterfaceName}" Command="{Binding AdvertiseCommand}">
-                                                <TextBlock Classes="mono" Text="{Binding Address}" />
-                                            </Button>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
                             <StackPanel>
                                 <TextBlock Classes="label" Text="引导端点（每行一个 IP:端口，最多 16 个；启动时会在后台自动引导）" />
                                 <TextBox Classes="mono" Text="{Binding BootstrapText}" AcceptsReturn="True" MinHeight="84" TextWrapping="NoWrap"
@@ -84,12 +62,15 @@
                                     <TextBlock Classes="caption" Text="节点在签名联系人中声明并强制执行的服务。" />
                                 </StackPanel>
                             </StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="20">
+                            <WrapPanel ItemSpacing="20" LineSpacing="6">
                                 <CheckBox Content="下载 (Download)" IsChecked="{Binding CapabilityDownload}" />
                                 <CheckBox Content="提供 (Provide)" IsChecked="{Binding CapabilityProvide}" />
-                                <CheckBox Content="中继 (Relay)" IsChecked="{Binding CapabilityRelay}" />
-                            </StackPanel>
-                            <ToggleSwitch IsChecked="{Binding EnableNatTraversal}" OnContent="启用 NAT 穿透：注册中继、检查可达性、自动打洞"
+                                <CheckBox Content="穿透协调 (Traversal)" IsChecked="{Binding CapabilityTraversal}"
+                                          ToolTip.Tip="观测登记节点的端点、引介双方打洞并安排可达性回拨" />
+                                <CheckBox Content="转发 (Forwarder)" IsChecked="{Binding CapabilityForwarder}"
+                                          ToolTip.Tip="托管转发会话并中继端到端加密的信封" />
+                            </WrapPanel>
+                            <ToggleSwitch IsChecked="{Binding EnableNatTraversal}" OnContent="启用 NAT 穿透：登记 Traversal 节点、建立转发会话、检查可达性、自动打洞"
                                           OffContent="已关闭 NAT 穿透" />
                         </StackPanel>
                     </Border>

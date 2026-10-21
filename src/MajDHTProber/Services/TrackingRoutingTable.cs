@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Net;
 using MajDHTNetwork;
 
 #nullable enable
@@ -11,21 +10,27 @@ namespace MajDHTProber.Services
     public sealed class RoutingObservation : EventArgs
     {
         /// <summary>Creates the event data.</summary>
-        /// <param name="peer">The authenticated contact.</param>
-        /// <param name="verifiedAddress">The address at which the contact proved an advertised endpoint, or null.</param>
+        /// <param name="peer">The authenticated contact at the endpoints the table knows for it.</param>
+        /// <param name="observed">The endpoint at which the node exchanged the authenticated packet, or null.</param>
         /// <param name="inTable">Whether the contact is a table entry after the observation.</param>
-        public RoutingObservation(DHTPeer peer, IPAddress? verifiedAddress, bool inTable)
+        public RoutingObservation(DHTPeer peer, DHTEndpoint? observed, bool inTable)
         {
             Peer = peer;
-            VerifiedAddress = verifiedAddress;
+            Observed = observed;
             InTable = inTable;
         }
 
-        /// <summary>Gets the authenticated contact.</summary>
+        /// <summary>
+        /// Gets the authenticated contact paired with the endpoints the table knows for it after the observation, or with
+        /// only the observed endpoint when the table did not admit it.
+        /// </summary>
         public DHTPeer Peer { get; }
 
-        /// <summary>Gets the address at which the contact proved an advertised endpoint, or null.</summary>
-        public IPAddress? VerifiedAddress { get; }
+        /// <summary>
+        /// Gets the endpoint at which the hosted node itself exchanged an authenticated packet with the contact, or null when
+        /// the exchange proved no endpoint, such as a response delivered through a Forwarder.
+        /// </summary>
+        public DHTEndpoint? Observed { get; }
 
         /// <summary>Gets whether the contact is a table entry after the observation.</summary>
         public bool InTable { get; }
@@ -78,13 +83,15 @@ namespace MajDHTProber.Services
             _localNodeId = localNodeId;
         }
 
-        /// <summary>Forwards an authenticated contact to the decorated table and reports it.</summary>
-        /// <param name="peer">The authenticated contact.</param>
-        /// <param name="verifiedAddress">The proven advertised address, or null to refresh a known contact only.</param>
-        public void Observe(DHTPeer peer, IPAddress? verifiedAddress)
+        /// <summary>Forwards an authenticated contact to the decorated table and reports it with the endpoints the table keeps for it.</summary>
+        /// <param name="contact">The authenticated contact.</param>
+        /// <param name="observed">The endpoint the node exchanged the packet with, or null to refresh a known contact only.</param>
+        public void Observe(DHTContact contact, DHTEndpoint? observed)
         {
-            _inner.Observe(peer, verifiedAddress);
-            Raise(Observed, new RoutingObservation(peer, verifiedAddress, Contains(peer.NodeId)));
+            _inner.Observe(contact, observed);
+            var entry = FindEntry(contact.NodeId);
+            var peer = entry ?? new DHTPeer(contact, observed == null ? Array.Empty<DHTEndpoint>() : new[] { observed });
+            Raise(Observed, new RoutingObservation(peer, observed, entry != null));
         }
 
         /// <summary>Removes a contact from the decorated table and reports it.</summary>
@@ -98,7 +105,7 @@ namespace MajDHTProber.Services
         /// <summary>Returns the decorated table's nearest live contacts.</summary>
         /// <param name="routingId">The target identifier.</param>
         /// <param name="count">The maximum number of contacts.</param>
-        /// <returns>The nearest contacts.</returns>
+        /// <returns>The nearest contacts at their observed endpoints.</returns>
         public IReadOnlyList<DHTPeer> Closest(string routingId, int count)
         {
             return _inner.Closest(routingId, count);
@@ -116,16 +123,7 @@ namespace MajDHTProber.Services
         /// <returns>Whether the node is present.</returns>
         public bool Contains(string nodeId)
         {
-            if (_localNodeId == null)
-            {
-                return false;
-            }
-            // A present node has distance zero to its own identifier, so it is always the nearest result.
-            foreach (var peer in _inner.Closest(nodeId, 1))
-            {
-                return peer.NodeId == nodeId;
-            }
-            return false;
+            return _localNodeId != null && FindEntry(nodeId) != null;
         }
 
         /// <summary>Returns every live table entry.</summary>
@@ -135,6 +133,19 @@ namespace MajDHTProber.Services
         {
             var local = _localNodeId;
             return local == null ? Array.Empty<DHTPeer>() : _inner.Closest(local, maximum);
+        }
+
+        /// <summary>Finds the table entry of a node.</summary>
+        /// <param name="nodeId">The node identifier.</param>
+        /// <returns>The entry at its observed endpoints, or null when the node is not a live entry.</returns>
+        private DHTPeer? FindEntry(string nodeId)
+        {
+            // A present node has distance zero to its own identifier, so it is always the nearest result.
+            foreach (var peer in _inner.Closest(nodeId, 1))
+            {
+                return peer.NodeId == nodeId ? peer : null;
+            }
+            return null;
         }
 
         /// <summary>Notifies listeners while isolating listener failures from node threads.</summary>

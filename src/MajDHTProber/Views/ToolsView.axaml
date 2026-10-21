@@ -14,7 +14,7 @@
                         <DataTemplate x:DataType="tools:PingToolViewModel">
                             <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="12">
                                 <TextBlock Classes="caption"
-                                           Text="类似 ping：每一轮都以独立的探针身份直接向端点发送签名 Hello，再向同一端点发送一次加密 Ping，分别计时，并显示对方观察到的本机地址。探针不通告端点，不会进入对方路由表。" />
+                                           Text="类似 ping：每一轮都以独立的探针身份直接向端点发送签名 Hello，再向同一端点发送一次加密 Ping，分别计时，并显示对方观察到的本机地址。探针不应答任何请求，不会进入对方路由表。" />
                                 <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                                     <StackPanel>
                                         <TextBlock Classes="label" Text="端点" />
@@ -195,7 +195,7 @@
                             <ScrollViewer HorizontalScrollBarVisibility="Disabled">
                                 <StackPanel Spacing="12">
                                     <TextBlock Classes="caption"
-                                               Text="向指定提供者读取单个块（可指定中继），校验长度与 Merkle 位置后显示内容，用于定位单个提供者或中继路径的问题。" />
+                                               Text="向指定提供者读取单个块（可指定 Forwarder），校验长度与 Merkle 位置后显示内容，用于定位单个提供者或转发路径的问题。" />
                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                         <TextBox Classes="mono" Text="{Binding RecordText}" PlaceholderText="键或记录码" />
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
@@ -219,8 +219,8 @@
                                             </ComboBox>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1">
-                                            <TextBlock Classes="label" Text="中继" />
-                                            <ComboBox ItemsSource="{Binding Relays}" SelectedItem="{Binding SelectedRelay}" HorizontalAlignment="Stretch">
+                                            <TextBlock Classes="label" Text="Forwarder" />
+                                            <ComboBox ItemsSource="{Binding Forwarders}" SelectedItem="{Binding SelectedForwarder}" HorizontalAlignment="Stretch">
                                                 <ComboBox.ItemTemplate>
                                                     <DataTemplate x:DataType="vm:PeerChoiceViewModel">
                                                         <TextBlock Classes="mono" Text="{Binding Label}" />
@@ -255,7 +255,7 @@
             </TabItem>
 
             <!-- NAT -->
-            <TabItem Header="中继 / 打洞">
+            <TabItem Header="NAT 穿透 / 打洞">
                 <ContentControl Content="{Binding Nat}" Margin="0,12,0,0">
                     <ContentControl.ContentTemplate>
                         <DataTemplate x:DataType="tools:NatToolViewModel">
@@ -265,11 +265,11 @@
                                 </Border>
                                 <Border Classes="subtle" Padding="16,14">
                                     <StackPanel Spacing="10">
-                                        <TextBlock Classes="h3" Text="注册中继" />
-                                        <TextBlock Classes="caption" Text="在中继登记本节点被观察到的 TCP/UDP 端点，并持续刷新租约、轮询引介；同时触发可达性检查（独立回拨）。" />
+                                        <TextBlock Classes="h3" Text="登记 Traversal 节点" />
+                                        <TextBlock Classes="caption" Text="在 Traversal 节点登记本节点被观察到的 TCP/UDP 端点，并持续刷新登记、轮询引介；同时触发可达性检查（独立回拨）。" />
                                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                                            <ComboBox ItemsSource="{Binding Relays}" SelectedItem="{Binding SelectedRelay}" HorizontalAlignment="Stretch"
-                                                      PlaceholderText="没有具备中继能力的已知节点">
+                                            <ComboBox ItemsSource="{Binding TraversalNodes}" SelectedItem="{Binding SelectedTraversal}" HorizontalAlignment="Stretch"
+                                                      PlaceholderText="没有具备 Traversal 能力的已知节点">
                                                 <ComboBox.ItemTemplate>
                                                     <DataTemplate x:DataType="vm:PeerChoiceViewModel">
                                                         <TextBlock Classes="mono" Text="{Binding Label}" />
@@ -279,10 +279,10 @@
                                             <Button Grid.Column="1" Classes="iconbutton" Command="{Binding RefreshChoicesCommand}" ToolTip.Tip="刷新节点列表">
                                                 <c:LineIcon Data="{StaticResource Icon.Refresh}" />
                                             </Button>
-                                            <Button Grid.Column="2" Classes="accent" Command="{Binding RegisterCommand}">
+                                            <Button Grid.Column="2" Classes="accent" Command="{Binding RegisterTraversalCommand}">
                                                 <StackPanel Orientation="Horizontal" Spacing="7">
                                                     <c:LineIcon Data="{StaticResource Icon.Relay}" />
-                                                    <TextBlock Text="注册" />
+                                                    <TextBlock Text="登记" />
                                                 </StackPanel>
                                             </Button>
                                         </Grid>
@@ -290,8 +290,30 @@
                                 </Border>
                                 <Border Classes="subtle" Padding="16,14">
                                     <StackPanel Spacing="10">
-                                        <TextBlock Classes="h3" Text="经中继打洞" />
-                                        <TextBlock Classes="caption" Text="中继分发双方观察到的端点和一次性票据，双方从监听端口同时探测；成功后后续请求直接走该路由。" />
+                                        <TextBlock Classes="h3" Text="建立转发会话" />
+                                        <TextBlock Classes="caption" Text="与 Forwarder 建立并保持转发会话，使它能把其他节点的加密信封投递到本节点被观察到的端点；私有节点依赖它被访问。" />
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <ComboBox ItemsSource="{Binding Forwarders}" SelectedItem="{Binding SelectedForwarder}" HorizontalAlignment="Stretch"
+                                                      PlaceholderText="没有具备 Forwarder 能力的已知节点">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:PeerChoiceViewModel">
+                                                        <TextBlock Classes="mono" Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <Button Grid.Column="1" Classes="accent" Command="{Binding RegisterForwarderCommand}">
+                                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                                    <c:LineIcon Data="{StaticResource Icon.Relay}" />
+                                                    <TextBlock Text="建立会话" />
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="subtle" Padding="16,14">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Classes="h3" Text="经 Traversal 节点打洞" />
+                                        <TextBlock Classes="caption" Text="Traversal 节点分发双方观察到的端点和一次性票据，双方从监听端口同时探测；成功后后续请求直接走该路由。" />
                                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                                             <StackPanel>
                                                 <TextBlock Classes="label" Text="目标节点" />
@@ -401,7 +423,7 @@
                         <DataTemplate x:DataType="tools:StatisticsToolViewModel">
                             <Grid ColumnDefinitions="3*,16,2*" RowDefinitions="Auto,Auto,*">
                                 <TextBlock Grid.ColumnSpan="3" Classes="caption"
-                                           Text="当前节点生命周期内，按节点与路由（端点 + 传输）统计的请求发送数与超时未应答数；每次 UDP 重传与 TCP 尝试都会计入，经中继转发的请求计入中继。" />
+                                           Text="当前节点生命周期内，按节点与路由（端点 + 传输）统计的请求发送数与超时未应答数；每次 UDP 重传与 TCP 尝试都会计入，经 Forwarder 转发的请求计入 Forwarder。" />
                                 <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Classes="h3" Margin="0,10" Text="{Binding TotalsText}" />
                                 <Grid Grid.Row="2" RowDefinitions="Auto,*">
                                     <Border Classes="tablehead">

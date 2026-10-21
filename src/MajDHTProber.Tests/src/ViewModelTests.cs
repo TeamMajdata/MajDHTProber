@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using System.Net;
 using System.Threading.Tasks;
 using MajDHTNetwork;
 using MajDHTProber.Infrastructure;
@@ -24,11 +23,11 @@ namespace MajDHTProber.Tests
         public async Task FiltersPeers()
         {
             await using var first = await TestNodes.StartAsync();
-            await using var second = await TestNodes.StartAsync(DHTCapabilities.Relay);
+            await using var second = await TestNodes.StartAsync(DHTCapabilities.Traversal);
             using var fixture = new ContextFixture();
             var peers = fixture.Manager.Primary.Peers;
-            peers.Observe(first.LocalPeer, PeerSource.Routing, true, IPAddress.Loopback);
-            peers.Observe(second.LocalPeer, PeerSource.Lookup);
+            peers.Observe(first.LocalPeer, PeerSource.Routing, true, first.LocalPeer.Endpoints[0]);
+            peers.Observe(new DHTPeer(second.LocalContact, Array.Empty<DHTEndpoint>()), PeerSource.Lookup);
 
             var viewModel = new PeersViewModel(fixture.Context);
 
@@ -44,12 +43,14 @@ namespace MajDHTProber.Tests
             viewModel.SearchText = first.NodeId.Substring(10, 12).ToUpperInvariant();
             Assert.Equal(first.NodeId, Assert.Single(viewModel.VisiblePeers).NodeId);
 
-            viewModel.SearchText = "中继";
+            viewModel.SearchText = "traversal";
             Assert.Equal(second.NodeId, Assert.Single(viewModel.VisiblePeers).NodeId);
 
             viewModel.SelectedPeer = viewModel.VisiblePeers[0];
             Assert.NotNull(viewModel.Detail);
-            Assert.True(viewModel.Detail!.HasNoEndpoints == (second.LocalPeer.Endpoints.Count == 0));
+            Assert.True(viewModel.Detail!.HasNoEndpoints);
+            Assert.True(viewModel.Detail.Item.IsTraversal);
+            Assert.Empty(viewModel.Detail.TraversalCandidates);
 
             peers.Forget(second.NodeId);
             Assert.Empty(viewModel.VisiblePeers);
@@ -151,7 +152,7 @@ namespace MajDHTProber.Tests
             Assert.True(overview.Active.IsRunning);
             Assert.Equal(fixture.Manager.Primary.NodeId, overview.NodeIdText);
             Assert.Single(overview.Endpoints);
-            Assert.False(overview.ShowNoEndpointWarning);
+            Assert.False(overview.ShowPrivateWarning);
 
             var content = new ContentViewModel(fixture.Context) { DownloadInput = "nothing" };
             await content.DownloadCommand.ExecuteAsync(null);

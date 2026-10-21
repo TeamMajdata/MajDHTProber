@@ -2,9 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Net;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -17,30 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace MajDHTProber.ViewModels
 {
-    /// <summary>One local interface address offered as advertised address.</summary>
-    public sealed class LocalAddressViewModel
-    {
-        /// <summary>Creates an entry.</summary>
-        /// <param name="address">The address text.</param>
-        /// <param name="interfaceName">The interface name.</param>
-        /// <param name="advertise">Adds the address to the advertised addresses.</param>
-        public LocalAddressViewModel(string address, string interfaceName, Action<LocalAddressViewModel> advertise)
-        {
-            Address = address;
-            InterfaceName = interfaceName;
-            AdvertiseCommand = new RelayCommand(() => advertise(this));
-        }
-
-        /// <summary>Gets the address text.</summary>
-        public string Address { get; }
-
-        /// <summary>Gets the interface name.</summary>
-        public string InterfaceName { get; }
-
-        /// <summary>Gets the command that adds the address to the advertised addresses.</summary>
-        public IRelayCommand AdvertiseCommand { get; }
-    }
-
     /// <summary>The settings page: edits, validates and applies the primary node configuration and prober preferences.</summary>
     public sealed partial class SettingsViewModel : PageViewModel
     {
@@ -63,14 +36,10 @@ namespace MajDHTProber.ViewModels
             : base(context)
         {
             Load(context.Manager.Settings);
-            ReloadLocalAddresses();
         }
 
         /// <summary>Gets the validation errors of the last save attempt.</summary>
         public ObservableCollection<string> Errors { get; } = new ObservableCollection<string>();
-
-        /// <summary>Gets the local interface addresses.</summary>
-        public ObservableCollection<LocalAddressViewModel> LocalAddresses { get; } = new ObservableCollection<LocalAddressViewModel>();
 
         /// <summary>Gets the transport options.</summary>
         public IReadOnlyList<string> TransportOptions { get; } = new[] { "TCP", "UDP" };
@@ -94,9 +63,9 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial string ListenAddresses { get; set; } = string.Empty;
 
-        /// <summary>Gets or sets the advertised addresses.</summary>
+        /// <summary>Gets or sets whether the listeners are known to be reachable from other networks.</summary>
         [ObservableProperty]
-        public partial string AdvertisedAddresses { get; set; } = string.Empty;
+        public partial bool PubliclyReachable { get; set; }
 
         /// <summary>Gets or sets whether TCP is enabled.</summary>
         [ObservableProperty]
@@ -126,9 +95,13 @@ namespace MajDHTProber.ViewModels
         [ObservableProperty]
         public partial bool CapabilityProvide { get; set; }
 
-        /// <summary>Gets or sets the relay capability.</summary>
+        /// <summary>Gets or sets the Traversal capability.</summary>
         [ObservableProperty]
-        public partial bool CapabilityRelay { get; set; }
+        public partial bool CapabilityTraversal { get; set; }
+
+        /// <summary>Gets or sets the Forwarder capability.</summary>
+        [ObservableProperty]
+        public partial bool CapabilityForwarder { get; set; }
 
         /// <summary>Gets or sets the bootstrap endpoints, one per line.</summary>
         [ObservableProperty]
@@ -250,7 +223,7 @@ namespace MajDHTProber.ViewModels
             return new ProberSettings
             {
                 ListenAddresses = ListenAddresses.Trim(),
-                AdvertisedAddresses = AdvertisedAddresses.Trim(),
+                PubliclyReachable = PubliclyReachable,
                 TcpEnabled = TcpEnabled,
                 TcpPort = (int)(TcpPort ?? 0),
                 UdpEnabled = UdpEnabled,
@@ -258,7 +231,8 @@ namespace MajDHTProber.ViewModels
                 PreferredTransport = PreferredTransportIndex == 1 ? DHTTransport.Udp : DHTTransport.Tcp,
                 CapabilityDownload = CapabilityDownload,
                 CapabilityProvide = CapabilityProvide,
-                CapabilityRelay = CapabilityRelay,
+                CapabilityTraversal = CapabilityTraversal,
+                CapabilityForwarder = CapabilityForwarder,
                 BootstrapEndpoints = bootstrap,
                 IdentityWorkBits = (int)(IdentityWorkBits ?? 12),
                 PersistIdentity = PersistIdentity,
@@ -346,47 +320,6 @@ namespace MajDHTProber.ViewModels
             IsDirty = true;
         }
 
-        /// <summary>Appends a local address to the advertised addresses.</summary>
-        /// <param name="address">The address.</param>
-        private void AdvertiseAddress(LocalAddressViewModel address)
-        {
-            if (AdvertisedAddresses.Contains(address.Address, StringComparison.Ordinal))
-            {
-                return;
-            }
-            AdvertisedAddresses = string.IsNullOrWhiteSpace(AdvertisedAddresses) ? address.Address : AdvertisedAddresses.Trim() + ", " + address.Address;
-        }
-
-        /// <summary>Reloads the local interface addresses.</summary>
-        [RelayCommand]
-        private void ReloadLocalAddresses()
-        {
-            LocalAddresses.Clear();
-            try
-            {
-                foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
-                {
-                    if (networkInterface.OperationalStatus != OperationalStatus.Up || networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback)
-                    {
-                        continue;
-                    }
-                    foreach (var unicast in networkInterface.GetIPProperties().UnicastAddresses)
-                    {
-                        var address = unicast.Address;
-                        if (IPAddress.IsLoopback(address) || (address.AddressFamily == AddressFamily.InterNetworkV6 && address.IsIPv6LinkLocal))
-                        {
-                            continue;
-                        }
-                        LocalAddresses.Add(new LocalAddressViewModel(address.ToString(), networkInterface.Name, AdvertiseAddress));
-                    }
-                }
-            }
-            catch (NetworkInformationException exception)
-            {
-                Notify("无法读取本机网卡地址：" + exception.Message, StatusTone.Warning);
-            }
-        }
-
         /// <summary>Deletes the stored primary identity so the next start generates a new node identifier.</summary>
         [RelayCommand]
         private void ResetIdentity()
@@ -456,7 +389,7 @@ namespace MajDHTProber.ViewModels
             try
             {
                 ListenAddresses = settings.ListenAddresses;
-                AdvertisedAddresses = settings.AdvertisedAddresses;
+                PubliclyReachable = settings.PubliclyReachable;
                 TcpEnabled = settings.TcpEnabled;
                 TcpPort = settings.TcpPort;
                 UdpEnabled = settings.UdpEnabled;
@@ -464,7 +397,8 @@ namespace MajDHTProber.ViewModels
                 PreferredTransportIndex = settings.PreferredTransport == DHTTransport.Udp ? 1 : 0;
                 CapabilityDownload = settings.CapabilityDownload;
                 CapabilityProvide = settings.CapabilityProvide;
-                CapabilityRelay = settings.CapabilityRelay;
+                CapabilityTraversal = settings.CapabilityTraversal;
+                CapabilityForwarder = settings.CapabilityForwarder;
                 BootstrapText = string.Join(Environment.NewLine, settings.BootstrapEndpoints);
                 IdentityWorkBits = settings.IdentityWorkBits;
                 PersistIdentity = settings.PersistIdentity;
