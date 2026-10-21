@@ -75,6 +75,11 @@ namespace MajDHTProber.Tests
                 }
                 Dispatcher.UIThread.RunJobs();
                 viewModel.Peers.SelectedPeer = viewModel.Peers.VisiblePeers[0];
+                viewModel.Peers.IsAddFormOpen = true;
+                viewModel.Peers.ScanTargets = new[] { TestNodes.UdpEndpoint(remote) };
+                viewModel.Peers.ToggleScanFormCommand.Execute(null);
+                await viewModel.Peers.ScanLanCommand.ExecuteAsync(null);
+                Assert.NotEmpty(viewModel.Peers.DiscoveredPeers);
 
                 foreach (var theme in new[] { ThemeVariant.Light, ThemeVariant.Dark })
                 {

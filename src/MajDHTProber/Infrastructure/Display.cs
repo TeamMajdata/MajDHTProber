@@ -294,6 +294,10 @@ namespace MajDHTProber.Infrastructure
             {
                 parts.Add("提示");
             }
+            if ((sources & PeerSource.Lan) != 0)
+            {
+                parts.Add("局域网");
+            }
             return parts.Count == 0 ? None : string.Join(" · ", parts);
         }
 

@@ -77,6 +77,23 @@ namespace MajDHTProber.ViewModels
         /// <summary>Gets the result of the latest add attempt.</summary>
         public BannerViewModel AddResult { get; } = new BannerViewModel();
 
+        /// <summary>Gets the nodes found by the latest LAN scan.</summary>
+        public ObservableCollection<DiscoveredPeerViewModel> DiscoveredPeers { get; } = new ObservableCollection<DiscoveredPeerViewModel>();
+
+        /// <summary>Gets the result of the latest LAN scan or of adding scanned nodes.</summary>
+        public BannerViewModel ScanResult { get; } = new BannerViewModel();
+
+        /// <summary>Gets or sets explicit scan targets used instead of the subnet broadcast addresses; tests scan loopback nodes with it.</summary>
+        internal IReadOnlyList<System.Net.IPEndPoint>? ScanTargets { get; set; }
+
+        /// <summary>Gets or sets whether the LAN scan panel is expanded.</summary>
+        [ObservableProperty]
+        public partial bool IsScanFormOpen { get; set; }
+
+        /// <summary>Gets or sets the UDP port the scan broadcasts to.</summary>
+        [ObservableProperty]
+        public partial decimal? ScanPort { get; set; }
+
         /// <summary>Gets or sets the search text.</summary>
         [ObservableProperty]
         public partial string SearchText { get; set; } = string.Empty;
@@ -238,6 +255,141 @@ namespace MajDHTProber.ViewModels
         private void ToggleAddForm()
         {
             IsAddFormOpen = !IsAddFormOpen;
+        }
+
+        /// <summary>Toggles the LAN scan panel, defaulting the port to the active session's UDP port when it opens.</summary>
+        [RelayCommand]
+        private void ToggleScanForm()
+        {
+            IsScanFormOpen = !IsScanFormOpen;
+            if (IsScanFormOpen && ScanPort == null)
+            {
+                ScanPort = Session.CreateLanScanOptions(null).Port;
+            }
+        }
+
+        /// <summary>Broadcasts a Hello on the local network and lists the answering nodes.</summary>
+        /// <param name="cancellationToken">Cancels the scan.</param>
+        /// <returns>Completion after the scan.</returns>
+        [RelayCommand(IncludeCancelCommand = true)]
+        private async Task ScanLanAsync(CancellationToken cancellationToken)
+        {
+            ScanResult.Hide();
+            var port = (int)(ScanPort ?? 0);
+            if (port < 1 || port > 65535)
+            {
+                ScanResult.Show("请输入 1–65535 之间的 UDP 端口。", StatusTone.Warning);
+                return;
+            }
+            var known = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var snapshot in Session.Peers.Snapshot())
+            {
+                known.Add(snapshot.NodeId);
+            }
+            LanScanResult? result = null;
+            if (!await RunAsync("扫描局域网", async () =>
+            {
+                var options = Session.CreateLanScanOptions(port) with { Targets = ScanTargets };
+                result = await Session.ScanLanAsync(options, cancellationToken);
+            }) || result == null)
+            {
+                return;
+            }
+            DiscoveredPeers.Clear();
+            var self = Session.NodeId;
+            foreach (var found in result.Peers)
+            {
+                DiscoveredPeers.Add(new DiscoveredPeerViewModel(found, found.NodeId == self, known.Contains(found.NodeId)));
+            }
+            var invalid = result.InvalidReplies == 0 ? string.Empty : "，忽略 " + result.InvalidReplies + " 个无效应答";
+            ScanResult.Show(result.Peers.Count == 0
+                    ? "向 " + result.Targets.Count + " 个广播地址发送 Hello 后没有节点应答" + invalid + "。请确认对方监听 UDP " + port + " 且防火墙放行。"
+                    : "发现 " + result.Peers.Count + " 个节点（" + result.Targets.Count + " 个广播地址" + invalid + "），耗时 " + Display.Duration(result.Elapsed) + "。",
+                result.Peers.Count == 0 ? StatusTone.Warning : StatusTone.Success);
+        }
+
+        /// <summary>Adds one scanned node through the active node's own Hello exchange.</summary>
+        /// <param name="row">The scanned node.</param>
+        /// <param name="cancellationToken">Cancels the addition.</param>
+        /// <returns>Completion after the attempt.</returns>
+        [RelayCommand(IncludeCancelCommand = true)]
+        private async Task AddDiscoveredAsync(DiscoveredPeerViewModel? row, CancellationToken cancellationToken)
+        {
+            if (row == null || !row.CanAdd)
+            {
+                return;
+            }
+            ScanResult.Hide();
+            if (await AddScannedAsync(row, cancellationToken))
+            {
+                ScanResult.Show("已添加 " + row.ShortId + "：" + row.StatusText, StatusTone.Success);
+            }
+            else
+            {
+                ScanResult.Show("添加 " + row.ShortId + " 失败：" + row.StatusText, StatusTone.Danger);
+            }
+        }
+
+        /// <summary>Adds every scanned node that is not the active node and not added yet, one after another.</summary>
+        /// <param name="cancellationToken">Cancels the additions.</param>
+        /// <returns>Completion after the attempts.</returns>
+        [RelayCommand(IncludeCancelCommand = true)]
+        private async Task AddAllDiscoveredAsync(CancellationToken cancellationToken)
+        {
+            ScanResult.Hide();
+            var added = 0;
+            var failed = 0;
+            foreach (var row in new List<DiscoveredPeerViewModel>(DiscoveredPeers))
+            {
+                if (!row.CanAdd)
+                {
+                    continue;
+                }
+                if (await AddScannedAsync(row, cancellationToken))
+                {
+                    added++;
+                }
+                else
+                {
+                    failed++;
+                }
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
+            ScanResult.Show("已添加 " + added + " 个节点" + (failed == 0 ? "。" : "，" + failed + " 个失败。"),
+                failed == 0 ? StatusTone.Success : added == 0 ? StatusTone.Danger : StatusTone.Warning);
+        }
+
+        /// <summary>Adds one scanned node and records the outcome on its row.</summary>
+        /// <param name="row">The scanned node.</param>
+        /// <param name="cancellationToken">Cancels the addition.</param>
+        /// <returns>Whether the node answered the active node and was added.</returns>
+        private async Task<bool> AddScannedAsync(DiscoveredPeerViewModel row, CancellationToken cancellationToken)
+        {
+            AddPeerResult? result = null;
+            var completed = await RunAsync("添加 " + row.ShortId, async () =>
+            {
+                result = await Session.AddPeerAsync(row.Found.Endpoint, new AddPeerOptions { Transport = DHTTransport.Udp }, cancellationToken);
+            });
+            if (!completed || result == null)
+            {
+                row.StatusText = "添加失败，详情见通知与日志。";
+                return false;
+            }
+            if (result.Peer == null)
+            {
+                row.StatusText = result.Note ?? "添加失败。";
+                return false;
+            }
+            row.IsAdded = true;
+            row.StatusText = (result.AdmittedToRoutingTable ? "已进入路由表" : "已添加") + (result.Note == null ? string.Empty : "，" + result.Note);
+            if (_items.TryGetValue(result.Peer.NodeId, out var item))
+            {
+                SelectedPeer = item;
+            }
+            return true;
         }
 
         /// <summary>Returns the rows that coordinate traversal.</summary>

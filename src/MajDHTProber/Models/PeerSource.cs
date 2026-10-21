@@ -24,5 +24,7 @@ namespace MajDHTProber.Models
         LocalNode = 32,
         /// <summary>Another contact embedded it as a hinted Traversal node or Forwarder.</summary>
         Hint = 64,
+        /// <summary>It answered a LAN broadcast scan.</summary>
+        Lan = 128,
     }
 }

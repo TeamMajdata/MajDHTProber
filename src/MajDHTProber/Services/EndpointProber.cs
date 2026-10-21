@@ -362,7 +362,7 @@ namespace MajDHTProber.Services
         /// <param name="identity">The probe identity, which must not be the sender.</param>
         /// <param name="expectedNodeId">The identity that must have answered, or null to accept any other identity.</param>
         /// <exception cref="CryptographicException">The response does not belong to the request or comes from the wrong identity.</exception>
-        private static void VerifyResponse(Packet response, Packet request, DHTIdentity identity, string? expectedNodeId)
+        internal static void VerifyResponse(Packet response, Packet request, DHTIdentity identity, string? expectedNodeId)
         {
             if (response.Kind != (request.Kind | 128) || !CryptographicOperations.FixedTimeEquals(response.RequestId.Span, request.RequestId.Span)
                 || response.Sender.NodeId == identity.NodeId || (expectedNodeId != null && response.Sender.NodeId != expectedNodeId))

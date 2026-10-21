@@ -152,7 +152,7 @@ namespace MajDHTProber.Tests
         {
             var vault = new IdentityVault(null, sink.CreateLogger("身份"));
             return new NodeSession(label, "test", NodeSessionRole.Primary, settings, vault, new EndpointProber(vault, sink),
-                routing ?? new RoutingSnapshotStore(null, sink.CreateLogger("路由表")), sink);
+                new LanDiscovery(vault, sink), routing ?? new RoutingSnapshotStore(null, sink.CreateLogger("路由表")), sink);
         }
 
         /// <summary>Waits until a condition holds.</summary>

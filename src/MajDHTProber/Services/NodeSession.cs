@@ -32,6 +32,8 @@ namespace MajDHTProber.Services
         private readonly IdentityVault _vault;
         /// <summary>The endpoint prober.</summary>
         private readonly EndpointProber _prober;
+        /// <summary>The LAN scanner.</summary>
+        private readonly LanDiscovery _discovery;
         /// <summary>The store of saved routing tables.</summary>
         private readonly RoutingSnapshotStore _routing;
         /// <summary>The session diagnostics logger.</summary>
@@ -68,10 +70,11 @@ namespace MajDHTProber.Services
         /// <param name="settings">The settings used by the first start; the session keeps a copy.</param>
         /// <param name="vault">The identity vault.</param>
         /// <param name="prober">The endpoint prober.</param>
+        /// <param name="discovery">The LAN scanner.</param>
         /// <param name="routing">The store of saved routing tables.</param>
         /// <param name="sink">The log sink.</param>
         public NodeSession(string label, string identityName, NodeSessionRole role, ProberSettings settings, IdentityVault vault,
-            EndpointProber prober, RoutingSnapshotStore routing, LogSink sink)
+            EndpointProber prober, LanDiscovery discovery, RoutingSnapshotStore routing, LogSink sink)
         {
             Label = label;
             IdentityName = identityName;
@@ -79,6 +82,7 @@ namespace MajDHTProber.Services
             _settings = settings.Clone();
             _vault = vault;
             _prober = prober;
+            _discovery = discovery;
             _routing = routing;
             _logger = sink.CreateLogger(label);
             _nodeLogger = sink.CreateLogger(label + " · 协议库");
@@ -600,6 +604,44 @@ namespace MajDHTProber.Services
             var remembered = best ?? (results[0] with { HelloSucceeded = false, Error = "所有端点均未由该节点应答。" });
             Peers.RecordProbe(peer.NodeId, PeerProbeRecord.From(remembered, DateTimeOffset.UtcNow));
             return results;
+        }
+
+        /// <summary>
+        /// Scans the local network with a broadcast Hello and records every answering node in the peer list, except this
+        /// node itself and the prober's probe identity; the node does not need to be running.
+        /// </summary>
+        /// <param name="options">The scan tuning, or null for the port and probe settings of this session.</param>
+        /// <param name="cancellationToken">Cancels the scan.</param>
+        /// <returns>The scan outcome, including this node when it answered.</returns>
+        /// <exception cref="SocketException">No scanning socket could be bound.</exception>
+        /// <exception cref="OperationCanceledException">The scan was cancelled.</exception>
+        public async Task<LanScanResult> ScanLanAsync(LanScanOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            var result = await _discovery.ScanAsync(options ?? CreateLanScanOptions(null), cancellationToken).ConfigureAwait(false);
+            var self = NodeId;
+            var recorded = 0;
+            foreach (var found in result.Peers)
+            {
+                if (found.NodeId == self || IsProbeClient(found.NodeId))
+                {
+                    continue;
+                }
+                Peers.Observe(found.Peer, PeerSource.Lan);
+                recorded++;
+            }
+            _logger.LogInformation("局域网扫描：{Found} 个节点应答，{Recorded} 个记入节点列表，耗时 {Elapsed}。", result.Peers.Count, recorded,
+                Display.Duration(result.Elapsed));
+            return result;
+        }
+
+        /// <summary>Creates LAN scan options from this session's settings.</summary>
+        /// <param name="port">The UDP port to scan, or null for this session's UDP port, falling back to the default port when UDP is disabled or assigned.</param>
+        /// <returns>The scan options.</returns>
+        public LanScanOptions CreateLanScanOptions(int? port)
+        {
+            var settings = Settings;
+            var scanned = port ?? (settings.UdpEnabled && settings.UdpPort != 0 ? settings.UdpPort : ProberSettings.DefaultPort);
+            return new LanScanOptions { Port = scanned, Probe = ProbeOptions.From(settings) };
         }
 
         /// <summary>Checks whether this node reaches a peer through its own routes by looking up the peer's identifier.</summary>

@@ -17,9 +17,10 @@ dotnet test src/MajDHTProber.Tests/MajDHTProber.Tests.csproj -c Release --filter
 | `src/PeerTrackingTests.cs` | 连接状态判定、节点目录合并（联系人序号与观察端点）、追踪路由表的观察 / 移除 / 清除及监听器隔离。 |
 | `src/StorageTests.cs` | 身份持久化与删除、仅内存身份、路由表快照的保存 / 读取 / 删除、设置 JSON 往返、键与记录码解析。 |
 | `src/EndpointProberTests.cs` | 经公开协议层对 TCP / UDP 端点做签名 Hello + 加密 Ping、关闭端口的失败报告、临时客户端接入并下载。 |
+| `src/LanDiscoveryTests.cs` | 局域网扫描：向显式目标发送 Hello 帧、完成 Cookie 握手并收集签名应答、忽略无效数据报、会话记录扫描结果并排除自身、扫描选项派生、子网广播地址计算、UDP 传输帧编解码。回环套接字收不到广播，真实广播需在局域网中手动验证。 |
 | `src/NodeSessionTests.cs` | 会话启动停止、无效设置、经库的 `AddPeerAsync` 按端点添加节点、换端口重启的节点在重新验证后更新观察端点、拒绝添加自身、无应答端点的失败报告、探测已知节点与路由探测、路由表保存与恢复、会话间传输、撤回与停止提供。 |
 | `src/LocalNetworkTests.cs` | 本地测试网络经回环 Hello 双向互联、两种端到端通信测试、移除本地节点、设置保存校验。 |
-| `src/ViewModelTests.cs` | 节点列表筛选与详情、添加表单校验、设置页校验与保存、日志页筛选 / 暂停 / 清空、概览启动与内容页发布拉取。 |
+| `src/ViewModelTests.cs` | 节点列表筛选与详情、添加表单校验、局域网扫描面板的扫描与添加、设置页校验与保存、日志页筛选 / 暂停 / 清空、概览启动与内容页发布拉取。 |
 | `src/UiRenderingTests.cs` | 用 Avalonia Headless（Skia）在浅色与深色主题下渲染每个页面和每个调试工具标签页，并断言没有绑定错误。 |
 
 设置环境变量 `MAJDHTPROBER_SCREENSHOTS` 为一个目录后，渲染测试会把每个页面的截图保存为 PNG，便于检查界面。截图不属于仓库内容。

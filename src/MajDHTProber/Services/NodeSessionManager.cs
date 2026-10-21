@@ -51,8 +51,9 @@ namespace MajDHTProber.Services
             _settings = store.Load();
             sink.MinimumLevel = _settings.MinimumLogLevel;
             Prober = new EndpointProber(vault, sink);
+            Discovery = new LanDiscovery(vault, sink);
             RoundTrip = new RoundTripTester(Prober, sink);
-            Primary = new NodeSession("主节点", PrimaryIdentityName, NodeSessionRole.Primary, _settings, vault, Prober, Routing, sink);
+            Primary = new NodeSession("主节点", PrimaryIdentityName, NodeSessionRole.Primary, _settings, vault, Prober, Discovery, Routing, sink);
             _sessions.Add(Primary);
             _active = Primary;
         }
@@ -77,6 +78,9 @@ namespace MajDHTProber.Services
 
         /// <summary>Gets the endpoint prober.</summary>
         public EndpointProber Prober { get; }
+
+        /// <summary>Gets the LAN scanner shared by every session.</summary>
+        public LanDiscovery Discovery { get; }
 
         /// <summary>Gets the end-to-end transfer tester.</summary>
         public RoundTripTester RoundTrip { get; }
@@ -208,7 +212,7 @@ namespace MajDHTProber.Services
                     }
                 }
                 var settings = DeriveLocalSettings(_settings, bootstrap, request);
-                session = new NodeSession("本地节点 " + index, "local-" + index, NodeSessionRole.Local, settings, Vault, Prober, Routing, Sink);
+                session = new NodeSession("本地节点 " + index, "local-" + index, NodeSessionRole.Local, settings, Vault, Prober, Discovery, Routing, Sink);
                 _sessions.Add(session);
             }
             Raise(SessionsChanged);

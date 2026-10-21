@@ -57,6 +57,48 @@ namespace MajDHTProber.Tests
             Assert.Null(viewModel.Detail);
         }
 
+        /// <summary>The scan panel lists the answering nodes and adds one through the active node's own Hello.</summary>
+        /// <returns>Completion after the checks.</returns>
+        [Fact]
+        public async Task ScansAndAddsLanNodes()
+        {
+            using var timeout = TestNodes.Timeout();
+            await using var remote = await TestNodes.StartAsync();
+            using var fixture = new ContextFixture();
+            await fixture.Manager.Primary.StartAsync(timeout.Token);
+            var viewModel = new PeersViewModel(fixture.Context) { ScanTargets = new[] { TestNodes.UdpEndpoint(remote) } };
+
+            viewModel.ToggleScanFormCommand.Execute(null);
+            Assert.True(viewModel.IsScanFormOpen);
+            Assert.Equal(ProberSettings.DefaultPort, viewModel.ScanPort);
+
+            viewModel.ScanPort = 0;
+            await viewModel.ScanLanCommand.ExecuteAsync(null);
+            Assert.True(viewModel.ScanResult.IsWarning);
+            Assert.Empty(viewModel.DiscoveredPeers);
+
+            viewModel.ScanPort = ProberSettings.DefaultPort;
+            await viewModel.ScanLanCommand.ExecuteAsync(null);
+            Assert.True(viewModel.ScanResult.IsSuccess, viewModel.ScanResult.Text);
+            var row = Assert.Single(viewModel.DiscoveredPeers);
+            Assert.Equal(remote.NodeId, row.NodeId);
+            Assert.True(row.CanAdd);
+            Assert.False(row.IsKnown);
+            Assert.Equal(PeerSource.Lan, fixture.Manager.Primary.Peers.Find(remote.NodeId)!.Sources);
+
+            await viewModel.AddDiscoveredCommand.ExecuteAsync(row);
+            Assert.True(row.IsAdded);
+            Assert.False(row.CanAdd);
+            Assert.True(viewModel.ScanResult.IsSuccess, viewModel.ScanResult.Text);
+            var peer = fixture.Manager.Primary.Peers.Find(remote.NodeId)!;
+            Assert.True((peer.Sources & PeerSource.Manual) != 0);
+            Assert.True(peer.InRoutingTable);
+            Assert.Equal(remote.NodeId, viewModel.SelectedPeer?.NodeId);
+
+            await viewModel.ScanLanCommand.ExecuteAsync(null);
+            Assert.True(Assert.Single(viewModel.DiscoveredPeers).IsKnown);
+        }
+
         /// <summary>Adding a node without an endpoint explains what is missing.</summary>
         /// <returns>Completion after the checks.</returns>
         [Fact]

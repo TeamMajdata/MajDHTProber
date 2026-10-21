@@ -7,7 +7,7 @@
     <Grid ColumnDefinitions="*,16,480" Margin="0,0,0,16">
         <!-- Peer list -->
         <Border Classes="card" Padding="16">
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                     <TextBox Text="{Binding SearchText}" PlaceholderText="按节点 ID、标签、地址、能力或来源搜索…">
                         <TextBox.InnerLeftContent>
@@ -20,6 +20,12 @@
                             <StackPanel Orientation="Horizontal" Spacing="7">
                                 <c:LineIcon Data="{StaticResource Icon.Plus}" />
                                 <TextBlock Text="添加节点" />
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding ToggleScanFormCommand}" ToolTip.Tip="向局域网广播签名 Hello，列出应答的节点">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <c:LineIcon Data="{StaticResource Icon.Radar}" />
+                                <TextBlock Text="扫描局域网" />
                             </StackPanel>
                         </Button>
                         <Button Command="{Binding RefreshNeighborsCommand}" ToolTip.Tip="以自身 ID 查找邻居，发现更多节点">
@@ -53,7 +59,50 @@
                     </StackPanel>
                 </Border>
 
-                <ListBox Grid.Row="2" Classes="chips" Margin="0,12,0,10" ItemsSource="{Binding Filters}" SelectedItem="{Binding SelectedFilter}">
+                <!-- LAN scan panel -->
+                <Border Grid.Row="2" Classes="subtle" Margin="0,12,0,0" Padding="14,12" IsVisible="{Binding IsScanFormOpen}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Classes="h3" Text="扫描局域网" />
+                        <TextBlock Classes="caption"
+                                   Text="以探针身份向本机每个 IPv4 子网的广播地址发送一次签名 Hello；所有在该 UDP 端口监听的节点都会应答，应答经签名校验后列出。扫描结果只是线索，“添加”仍由当前节点自己发送 Hello 并校验身份。监听其他端口的节点不会被发现。" />
+                        <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
+                            <TextBlock Classes="label" Text="UDP 端口" VerticalAlignment="Center" Margin="0" />
+                            <NumericUpDown Grid.Column="1" Value="{Binding ScanPort}" Minimum="1" Maximum="65535" FormatString="0" Width="130" />
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6">
+                                <Button Classes="accent" Command="{Binding ScanLanCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <c:LineIcon Data="{StaticResource Icon.Radar}" />
+                                        <TextBlock Text="扫描" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding ScanLanCancelCommand}" Content="取消" IsVisible="{Binding ScanLanCommand.IsRunning}" />
+                                <Button Command="{Binding AddAllDiscoveredCommand}" Content="全部添加" IsVisible="{Binding !!DiscoveredPeers.Count}" />
+                                <Button Command="{Binding AddAllDiscoveredCancelCommand}" Content="停止" IsVisible="{Binding AddAllDiscoveredCommand.IsRunning}" />
+                            </StackPanel>
+                        </Grid>
+                        <ProgressBar IsIndeterminate="True" IsVisible="{Binding ScanLanCommand.IsRunning}" />
+                        <ContentControl Content="{Binding ScanResult}" />
+                        <ItemsControl ItemsSource="{Binding DiscoveredPeers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:DiscoveredPeerViewModel">
+                                    <Grid ColumnDefinitions="1.3*,1.4*,1.1*,0.9*,1.4*,Auto" ColumnSpacing="8" Margin="0,3">
+                                        <TextBlock Classes="cell mono" FontWeight="SemiBold" Text="{Binding ShortId}" ToolTip.Tip="{Binding NodeId}" />
+                                        <TextBlock Grid.Column="1" Classes="cell mono" Text="{Binding EndpointText}" />
+                                        <TextBlock Grid.Column="2" Classes="cell" Text="{Binding CapabilitiesText}" />
+                                        <TextBlock Grid.Column="3" Classes="cell mono" Text="{Binding RoundTripText}" />
+                                        <TextBlock Grid.Column="4" Classes="caption" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding StatusText}" VerticalAlignment="Center" />
+                                        <Button Grid.Column="5" Padding="9,4" Content="添加" IsEnabled="{Binding CanAdd}"
+                                                Command="{Binding $parent[ItemsControl].((vm:PeersViewModel)DataContext).AddDiscoveredCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <ListBox Grid.Row="3" Classes="chips" Margin="0,12,0,10" ItemsSource="{Binding Filters}" SelectedItem="{Binding SelectedFilter}">
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel Orientation="Horizontal" />
@@ -69,7 +118,7 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <Border Grid.Row="3" Classes="tablehead">
+                <Border Grid.Row="4" Classes="tablehead">
                     <Grid ColumnDefinitions="1.7*,0.9*,1.8*,1.1*,0.7*,0.9*">
                         <TextBlock Classes="head" Text="节点" />
                         <TextBlock Grid.Column="1" Classes="head" Text="状态" />
@@ -80,7 +129,7 @@
                     </Grid>
                 </Border>
 
-                <Panel Grid.Row="4">
+                <Panel Grid.Row="5">
                     <ListBox Classes="rows" ItemsSource="{Binding VisiblePeers}" SelectedItem="{Binding SelectedPeer}">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:PeerItemViewModel">
@@ -117,7 +166,7 @@
                         </Border>
                         <TextBlock Classes="h3" Text="还没有发现任何节点" HorizontalAlignment="Center" />
                         <TextBlock Classes="caption" TextAlignment="Center"
-                                   Text="启动节点后，可在设置中配置引导端点并点击“引导”，或使用“添加节点”手动输入端点；也可以在概览页创建本地测试节点。" />
+                                   Text="启动节点后，可在设置中配置引导端点并点击“引导”，使用“扫描局域网”发现同一网络内的节点，或使用“添加节点”手动输入端点；也可以在概览页创建本地测试节点。" />
                     </StackPanel>
                 </Panel>
             </Grid>
